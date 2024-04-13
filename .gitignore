@@ -1,0 +1,22 @@
+# ignore all video and images and audios
+*.avi
+*.mp4
+*.png
+*.wav
+
+# ignore all zip, tar, rar
+*.zip
+*.rar
+*.tar
+*.tar.gz
+
+# ignore h5 storing features
+*.h5
+
+# ignore pkl storing features
+*.pkl
+
+# ignore all checkpoints
+*.pth
+*.pt
+*.safetensors
