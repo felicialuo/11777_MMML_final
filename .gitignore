@@ -20,3 +20,6 @@
 *.pth
 *.pt
 *.safetensors
+
+# ingore datasets folder
+datasets/*
