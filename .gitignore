@@ -23,3 +23,6 @@
 
 # ingore datasets folder
 datasets/*
+
+#ignore pycache
+__pycache__/
