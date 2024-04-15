@@ -20,8 +20,9 @@ from pytorchvideo.data.labeled_video_paths import LabeledVideoPaths
 from pytorchvideo.data.clip_sampling import ClipSampler
 import torch
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type
-from transformers import VideoMAEImageProcessor, VideoMAEForVideoClassification
+from transformers import VideoMAEImageProcessor, VideoMAEForVideoClassification, TrainingArguments, Trainer
 import pytorchvideo.data
+
 
 import utils
 
@@ -136,7 +137,7 @@ def Ucf101(
     )
 
 def investigate_video(sample_video):
-    label2id, id2label = utils.get_labels(dataset_root_path)
+    label2id, id2label = utils.get_labels() #dataset_root_path
     """Utility to investigate the keys present in a single video sample."""
     for k in sample_video:
         if k == "video" or k == "audio":
@@ -147,19 +148,20 @@ def investigate_video(sample_video):
     print(f"Video label: {id2label[sample_video['label']]}")
 
 
-def get_dataset(dataset_root_path):
+def get_dataset(dataset_root_path, image_processor, num_frames_to_sample=16,
+                sample_rate=8, fps=30):
 
-    label2id, id2label = utils.get_labels(dataset_root_path)
+    label2id, id2label = utils.get_labels() #dataset_root_path
+ 
 
-
-    model_ckpt = "MCG-NJU/videomae-base"
-    image_processor = VideoMAEImageProcessor.from_pretrained(model_ckpt)
-    model = VideoMAEForVideoClassification.from_pretrained(
-    model_ckpt,
-    label2id=label2id,
-    id2label=id2label,
-    ignore_mismatched_sizes=True,  # provide this in case you're planning to fine-tune an already fine-tuned checkpoint
-    )
+    # videomae_ckpt = "MCG-NJU/videomae-base"
+    # image_processor = VideoMAEImageProcessor.from_pretrained(videomae_ckpt)
+    # model = VideoMAEForVideoClassification.from_pretrained(
+    # videomae_ckpt,
+    # label2id=label2id,
+    # id2label=id2label,
+    # ignore_mismatched_sizes=True,  # provide this in case you're planning to fine-tune an already fine-tuned checkpoint
+    # )
 
     mean = image_processor.image_mean
     std = image_processor.image_std
@@ -170,9 +172,9 @@ def get_dataset(dataset_root_path):
         width = image_processor.size["width"]
     resize_to = (height, width)
 
-    num_frames_to_sample = model.config.num_frames
-    sample_rate = 8
-    fps = 30
+    # num_frames_to_sample = model.config.num_frames
+    # sample_rate = 8
+    # fps = 30
     clip_duration = num_frames_to_sample * sample_rate / fps
 
 
@@ -240,17 +242,55 @@ def get_dataset(dataset_root_path):
 
     return train_dataset, test_seen_dataset, test_unseen_dataset
 
+# def get_dataloader(dataset, mode='train', batch_size=16, num_workers=4, pin_memory=True):
+
+#     if mode == 'train': drop_last = True
+#     else: drop_last = False
+
+#     dataloader = torch.utils.data.DataLoader(
+#         dataset,
+#         batch_size=batch_size,
+#         num_workers=num_workers,
+#         pin_memory=pin_memory,
+#         drop_last=drop_last,
+#     )
+
+#     return dataloader
+
+
+
 
 
 if __name__ == "__main__":
+    import time
+    start_time = time.time()
+
     #test load dataset
-    dataset_root_path = 'datasets/UCF101/UCF-101/'
-    train_dataset, test_seen_dataset, test_unseen_dataset = get_dataset(dataset_root_path)
-    print(train_dataset.num_videos, test_seen_dataset.num_videos, test_unseen_dataset.num_videos)
+    dataset_root_path = '../datasets/UCF101/UCF-101/'
+    videomae_ckpt = "MCG-NJU/videomae-base"
+
+    image_processor = VideoMAEImageProcessor.from_pretrained(videomae_ckpt)
+
+    train_dataset, test_seen_dataset, test_unseen_dataset = get_dataset(dataset_root_path, image_processor,
+                                                                        num_frames_to_sample=16, sample_rate=8, fps=30)
+    print("datasets", train_dataset.num_videos, test_seen_dataset.num_videos, test_unseen_dataset.num_videos)
+
+    # train_loader = get_dataloader(train_dataset, mode='train', batch_size=16, num_workers=1, pin_memory=True)
+    # for x, y in train_loader:
+    #     print("train_loader")
+    #     print(x.shape, y.shape)
+    #     break
 
     #test investigate_video
     sample_video = next(iter(test_seen_dataset))
     investigate_video(sample_video)
+
+
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    print(f"Elapsed time is {elapsed_time} seconds.")
+
+
 
 
 
