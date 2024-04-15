@@ -242,20 +242,61 @@ def get_dataset(dataset_root_path, image_processor, num_frames_to_sample=16,
 
     return train_dataset, test_seen_dataset, test_unseen_dataset
 
-# def get_dataloader(dataset, mode='train', batch_size=16, num_workers=4, pin_memory=True):
 
-#     if mode == 'train': drop_last = True
-#     else: drop_last = False
 
-#     dataloader = torch.utils.data.DataLoader(
-#         dataset,
-#         batch_size=batch_size,
-#         num_workers=num_workers,
-#         pin_memory=pin_memory,
-#         drop_last=drop_last,
-#     )
+def collate_fn(examples):
+    """The collation function to be used by `Trainer` to prepare data batches."""
+    # permute to (num_frames, num_channels, height, width)
+    pixel_values = torch.stack(
+        [example["video"].permute(1, 0, 2, 3) for example in examples]
+    )
+    # audio = torch.stack(
+    #     [example["audio"]for example in examples]
+    # ) # currently of different length
+    audio = torch.zeros(pixel_values.shape)
 
-#     return dataloader
+    labels = torch.tensor([example["label"] for example in examples])
+    return {"pixel_values": pixel_values, "audio": audio, "labels": labels}
+    # return {"pixel_values": pixel_values}
+
+
+def get_dataloader(train_dataset, test_seen_dataset, test_unseen_dataset, image_processor, collate_fn, model, batch_size=16):
+    num_epochs = 10
+    args = TrainingArguments(
+        "new_videomae",
+        remove_unused_columns=False,
+        evaluation_strategy="epoch",
+        save_strategy="epoch",
+        learning_rate=5e-5,
+        per_device_train_batch_size=batch_size,
+        per_device_eval_batch_size=batch_size,
+        warmup_ratio=0.1,
+        logging_steps=10,
+        load_best_model_at_end=True,
+        metric_for_best_model="accuracy",
+        push_to_hub=True,
+        max_steps=(train_dataset.num_videos // batch_size) * num_epochs,
+        tf32=True,
+        #dataloader_num_workers = 12, 
+        #dataloader_persistent_workers = True
+    )
+
+    trainer = Trainer(
+        model,
+        args,
+        train_dataset=train_dataset,
+        eval_dataset=test_seen_dataset,
+        tokenizer=image_processor,
+        data_collator=collate_fn,
+    )
+
+    # predictions = trainer.predict(test_seen_dataset).predictions 
+    # print(predictions)
+    train_loader = trainer.get_train_dataloader()
+    test_seen_loader = trainer.get_test_dataloader(test_seen_dataset)
+    test_unseen_loader = trainer.get_test_dataloader(test_unseen_dataset)
+
+    return train_loader, test_seen_loader, test_unseen_loader
 
 
 
