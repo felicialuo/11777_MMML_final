@@ -49,4 +49,6 @@ def get_text_features(device):
     with torch.no_grad():
         text_features = clip_model.encode_text(text_inputs)
 
+    text_features /= text_features.norm(dim=-1, keepdim=True)
+
     return text_features.float()
