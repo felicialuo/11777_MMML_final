@@ -286,28 +286,33 @@ class TransformerNet(nn.Module):
         return logits, feat
 
 class TempNet(nn.Module):
-    def __init__(self, videomae_model, emb_size=768, num_class=51, device=torch.device("cuda")):
+    def __init__(self, videomae_model, text_features, av_emb_size=768, device=torch.device("cuda")):
         super(TempNet, self).__init__()
 
         self.videomae_model = videomae_model
         self.device= device
+        self.text_features = text_features
 
         # classification
         self.fc = nn.Sequential(
-            nn.Linear(emb_size, emb_size//2),
-            nn.ReLU(),
-            nn.LayerNorm(emb_size//2),
-            nn.Linear(emb_size//2, num_class)
-
+            nn.Linear(av_emb_size, text_features.shape[-1]),
+            # nn.ReLU(),
+            # nn.LayerNorm(av_emb_size//2),
+            # nn.Linear(av_emb_size//2, num_class)
         )
         
 
     def forward(self, batch):
-        video_feat = videomae.get_videomae_feats(self.videomae_model, batch, self.device) # (b, 1568, 768)
+        video_feat = videomae.get_videomae_feats(self.videomae_model, batch, self.device, freeze=True) # (b, 1568, 768)
 
         # pooling
-        feat = nn.functional.avg_pool1d(video_feat.permute(0, 2, 1), kernel_size=video_feat.shape[1]).squeeze(-1) # exp (b, emb_size)
-        logits = self.fc(feat) # exp (b, num_class)
+        av_feat = nn.functional.avg_pool1d(video_feat.permute(0, 2, 1), kernel_size=video_feat.shape[1]).squeeze(-1) # exp (b, av_emb_size)
+        av_feat = self.fc(av_feat) # exp (b, text_emb_size)
 
-        return logits, feat
+        av_features = av_feat / av_feat.norm(dim=-1, keepdim=True)
+
+        logits_per_av = 99.8748 * av_features @ self.text_features.T # logit_scale from ViFi-CLIP, CLIP used 100
+        logits_per_text = 99.8748 * self.text_features @ av_features.T
+
+        return logits_per_av, logits_per_text, av_features, self.text_features
 

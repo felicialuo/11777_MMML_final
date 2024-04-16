@@ -3,10 +3,12 @@ import pathlib
 from tqdm import tqdm
 import numpy as np
 import torch.nn as nn
+import gc
 
 import torch
 from transformers import VideoMAEModel, VideoMAEImageProcessor, Trainer, TrainingArguments
-import gc
+import clip
+
 
 import utils, data, videomae, transformerNet
 
@@ -27,12 +29,12 @@ def train_one_epoch(model, train_loader, device, optimizer, criterion, epoch):
         label = batch["labels"].to(device)
         total += label.shape[0]
 
-        logits, feat = model(batch)
-        loss = criterion(logits, label)
+        logits_per_av, logits_per_text, av_features, text_features = model(batch)
+        loss = criterion(logits_per_av, label)
         loss.backward()
         optimizer.step()
         
-        pred = logits.argmax(dim=1, keepdim=True)
+        pred = logits_per_av.argmax(dim=1, keepdim=True)
         correct += pred.eq(label.view_as(pred)).sum().item()
 
         # release memory
@@ -63,9 +65,11 @@ def eval(model, test_loader, device, criterion, epoch):
     with torch.no_grad():
         for batch in tqdm(test_loader, total=test_loader.dataset.num_videos//test_loader.batch_size+1, position=0, leave=False, desc="Test Epoch {}".format(epoch)):
             label = batch["labels"].to(device)
-            logits, feat = model(batch)
-            loss = criterion(logits, label)
-            pred = logits.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
+
+            logits_per_av, logits_per_text, av_features, text_features = model(batch)
+
+            loss = criterion(logits_per_av, label)
+            pred = logits_per_av.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
             correct += pred.eq(label.view_as(pred)).sum().item()
             losses.append(loss.item())
 
@@ -131,7 +135,10 @@ if __name__ == "__main__":
     train_loader, test_seen_loader, test_unseen_loader = data.get_dataloader(train_dataset, test_seen_dataset, test_unseen_dataset, 
                                                                         image_processor, data.collate_fn, videomae_model, batch_size=8)
     
-    model = transformerNet.TempNet(videomae_model, emb_size=768, num_class=51, device=device)
+    # text features
+    text_features = utils.get_text_features(device)
+
+    model = transformerNet.TempNet(videomae_model, text_features, av_emb_size=768, device=device)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
     criterion = nn.CrossEntropyLoss()
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
@@ -139,9 +146,6 @@ if __name__ == "__main__":
     train_losses, train_accuracies, test_seen_losses, test_seen_accuracies, test_unseen_losses, test_unseen_accuracies = train(model, device, 
                                                                                                                                train_loader, test_seen_loader, test_unseen_loader, 
                                                                                                                                optimizer, criterion, scheduler, num_epoch=5)
-
-
-
 
     end_time = time.time()
     elapsed_time = end_time - start_time

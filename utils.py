@@ -1,5 +1,7 @@
 import pathlib
 import csv
+import clip
+import torch
 
 # def get_labels(root_path):
 #     dataset_root_path = pathlib.Path(root_path)
@@ -36,3 +38,15 @@ def get_labels(csv_path="UCF101_AV_labels.csv"):
             id2label[id] = label
 
     return label2id, id2label
+
+def get_text_features(device):
+    # text_features = torch.load("UCF101_AV_text_features.pt").to(device)
+    clip_model, preprocess = clip.load("RN101", device)
+    clip_model.eval()
+    class_labels = get_labels()[0].keys()
+    text_inputs = torch.cat([clip.tokenize(f"a video of {c}")for c in class_labels]).to(device)
+
+    with torch.no_grad():
+        text_features = clip_model.encode_text(text_inputs)
+
+    return text_features.float()
