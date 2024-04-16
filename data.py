@@ -22,7 +22,7 @@ import torch
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 from transformers import VideoMAEImageProcessor, VideoMAEForVideoClassification, TrainingArguments, Trainer
 import pytorchvideo.data
-
+from torch.utils.data import DistributedSampler
 
 import utils
 
@@ -72,6 +72,7 @@ class ZS_LabeledVideoDataset(pytorchvideo.data.LabeledVideoDataset):
                 }
         """
         sample_dict = super().__next__()
+        
 
         # Map the label to its corresponding ID of all seen and unseen classes
         class_name = sample_dict['video_name'].split('_')[1]
@@ -148,6 +149,9 @@ def investigate_video(sample_video):
     print(f"Video label: {id2label[sample_video['label']]}")
 
 
+def _lambda_function(x):
+    return x / 255.0
+
 def get_dataset(dataset_root_path, image_processor, num_frames_to_sample=16,
                 sample_rate=8, fps=30):
 
@@ -186,7 +190,7 @@ def get_dataset(dataset_root_path, image_processor, num_frames_to_sample=16,
                 transform=Compose(
                     [
                         UniformTemporalSubsample(num_frames_to_sample),
-                        Lambda(lambda x: x / 255.0),
+                        Lambda(_lambda_function),
                         Normalize(mean, std),
                         RandomShortSideScale(min_size=256, max_size=320),
                         RandomCrop(resize_to),
@@ -204,6 +208,7 @@ def get_dataset(dataset_root_path, image_processor, num_frames_to_sample=16,
         map_label2id=label2id,
         decode_audio=True,
         transform=train_transform,
+        #video_sampler=DistributedSampler,
     )
 
     # Test seen and unseen datasets' transformations.
@@ -214,7 +219,7 @@ def get_dataset(dataset_root_path, image_processor, num_frames_to_sample=16,
                 transform=Compose(
                     [
                         UniformTemporalSubsample(num_frames_to_sample),
-                        Lambda(lambda x: x / 255.0),
+                        Lambda(_lambda_function),
                         Normalize(mean, std),
                         Resize(resize_to),
                     ]
@@ -223,6 +228,7 @@ def get_dataset(dataset_root_path, image_processor, num_frames_to_sample=16,
         ]
     )
 
+    
     # Test seen and unseen datasets.
     test_seen_dataset = Ucf101(
         data_path=os.path.join(dataset_root_path, "test_seen"),
@@ -230,6 +236,7 @@ def get_dataset(dataset_root_path, image_processor, num_frames_to_sample=16,
         map_label2id=label2id,
         decode_audio=True,
         transform=test_transform,
+        #video_sampler=DistributedSampler,
     )
 
     test_unseen_dataset = Ucf101(
@@ -238,6 +245,7 @@ def get_dataset(dataset_root_path, image_processor, num_frames_to_sample=16,
         map_label2id=label2id,
         decode_audio=True,
         transform=test_transform,
+        #video_sampler=DistributedSampler,
     )
 
     return train_dataset, test_seen_dataset, test_unseen_dataset
@@ -277,7 +285,10 @@ def get_dataloader(train_dataset, test_seen_dataset, test_unseen_dataset, image_
         push_to_hub=True,
         max_steps=(train_dataset.num_videos // batch_size) * num_epochs,
         tf32=True,
-        #dataloader_num_workers = 12, 
+        #dataloader_num_workers = 8, 
+        dataloader_pin_memory = True,
+        #dataloader_drop_last = True,
+        #local_rank = -1,
         #dataloader_persistent_workers = True
     )
 
