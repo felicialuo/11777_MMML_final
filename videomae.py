@@ -16,13 +16,18 @@ warnings.simplefilter("ignore", UserWarning)
 
 
 
-def get_videomae_feats(model, batch, device):
+def get_videomae_feats(model, batch, device, freeze=True):
     inputs = {"pixel_values": batch["pixel_values"].to(device)}
     model = model.to(device)
     
-    with torch.no_grad():
+    if freeze:
+        with torch.no_grad():
+            outputs = model(**inputs)
+            feats = outputs.last_hidden_state # (B, 1568, 768)
+    else:
         outputs = model(**inputs)
         feats = outputs.last_hidden_state # (B, 1568, 768)
+
     
     return feats
 
