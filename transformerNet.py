@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 from einops import rearrange
 import torchvision
+import videomae
 
 class AttentionLayer(nn.Module):
 
@@ -285,13 +286,17 @@ class TransformerNet(nn.Module):
         return logits, feat
 
 class TempNet(nn.Module):
-    def __init__(self, emb_size=768, num_class=51):
+    def __init__(self, videomae_model, emb_size=768, num_class=51, device=torch.device("cuda")):
         super(TempNet, self).__init__()
+
+        self.videomae_model = videomae_model
+        self.device= device
 
         # classification
         self.fc = nn.Linear(emb_size, num_class)
 
-    def forward(self, video):
+    def forward(self, batch):
+        video = videomae.get_videomae_feats(self.videomae_model, batch, self.device)
         # pooling
         feat = nn.functional.avg_pool1d(video.permute(0, 2, 1), kernel_size=video.shape[1]).squeeze(-1) # exp (b, emb_size)
         logits = self.fc(feat) # exp (b, num_class)
