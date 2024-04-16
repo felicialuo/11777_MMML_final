@@ -293,12 +293,20 @@ class TempNet(nn.Module):
         self.device= device
 
         # classification
-        self.fc = nn.Linear(emb_size, num_class)
+        self.fc = nn.Sequential(
+            nn.Linear(emb_size, emb_size//2),
+            nn.ReLU(),
+            nn.LayerNorm(emb_size//2),
+            nn.Linear(emb_size//2, num_class)
+
+        )
+        
 
     def forward(self, batch):
-        video = videomae.get_videomae_feats(self.videomae_model, batch, self.device)
+        video_feat = videomae.get_videomae_feats(self.videomae_model, batch, self.device) # (b, 1568, 768)
+
         # pooling
-        feat = nn.functional.avg_pool1d(video.permute(0, 2, 1), kernel_size=video.shape[1]).squeeze(-1) # exp (b, emb_size)
+        feat = nn.functional.avg_pool1d(video_feat.permute(0, 2, 1), kernel_size=video_feat.shape[1]).squeeze(-1) # exp (b, emb_size)
         logits = self.fc(feat) # exp (b, num_class)
 
         return logits, feat
