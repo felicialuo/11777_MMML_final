@@ -333,10 +333,10 @@ def get_iterable_dataloader(train_dataset, test_seen_dataset, test_unseen_datase
         logging_steps=10,
         load_best_model_at_end=True,
         metric_for_best_model="accuracy",
-        push_to_hub=True,
+        push_to_hub=False,
         max_steps=(train_dataset.num_videos // batch_size) * num_epochs,
         tf32=True,
-        #dataloader_num_workers = 8, 
+        dataloader_num_workers = 12, 
         dataloader_pin_memory = True,
         #dataloader_drop_last = True,
         #local_rank = -1,
@@ -398,7 +398,7 @@ def test():
 
     image_processor = VideoMAEImageProcessor.from_pretrained(videomae_ckpt)
 
-    train_dataset, test_seen_dataset, test_unseen_dataset = get_dataset(dataset_root_path, image_processor,
+    train_dataset, test_seen_dataset, test_unseen_dataset = get_default_dataset(dataset_root_path, image_processor,
                                                                         num_frames_to_sample=16, sample_rate=8, fps=30)
     print("datasets", train_dataset.num_videos, test_seen_dataset.num_videos, test_unseen_dataset.num_videos)
 
@@ -431,7 +431,7 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("device:", device)
 
-    train_dataset, test_seen_dataset, test_unseen_dataset = get_dataset(dataset_root_path, image_processor,
+    train_dataset, test_seen_dataset, test_unseen_dataset = get_default_dataset(dataset_root_path, image_processor,
                                                                         num_frames_to_sample=16, sample_rate=8, fps=30)
     print("datasets", train_dataset.num_videos, test_seen_dataset.num_videos, test_unseen_dataset.num_videos)
 

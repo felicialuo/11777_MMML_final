@@ -4,6 +4,8 @@ import clip
 import torch
 #from msclap import CLAP
 
+from models import *
+
 # def get_labels(root_path):
 #     dataset_root_path = pathlib.Path(root_path)
 
@@ -99,8 +101,5 @@ def get_text_features(device, encoder_choice='CLIP'):
 
     return text_features.float()
 
-
 if __name__ == "__main__":
     seen_label2id, seen_id2label, unseen_label2id, unseen_id2label = get_sep_seen_unseen_labels()
-
-    print(seen_id2label.keys())

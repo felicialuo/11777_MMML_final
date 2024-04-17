@@ -27,5 +27,8 @@ datasets/*
 #ignore pycache
 __pycache__/
 
+# ignore playground
+playground.ipynb
+
 wandb/
 new_videomae/

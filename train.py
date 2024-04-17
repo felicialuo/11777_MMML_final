@@ -12,6 +12,7 @@ import clip
 
 import utils, data, videomae, transformerNet
 
+import argparse
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -109,26 +110,37 @@ def train(model, device, train_loader, test_seen_loader, test_unseen_loader, opt
 
     return train_losses, train_accuracies, test_seen_losses, test_seen_accuracies, test_unseen_losses, test_unseen_accuracies
 
-
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description='Multi-Modal Machine Learning Project, Human Activity Recognition')
     
+    parser.add_argument("--data_path", type=str, default="./datasets/UCF101/UCF-101/")
+    parser.add_argument("--videomae_ckpt", type=str, default="MCG-NJU/videomae-base")
 
+    parser.add_argument("--audiores_ckpt", type=str, default="./Models/AudioResNet/finetuned-L18.pth")
+    parser.add_argument("--audiores_layers", type=int, default=18,
+                        choices=[18, 34, 50, 101, 134])
 
+    parser.add_argument("--text_encoder", type=str, default="CLIP",
+                        choices=["CLIP", "CLAP"])
+
+    parser.add_argument("--use_gpu", action="store_true")
+
+    return parser.parse_args()
 
 if __name__ == "__main__":
+    args = parse_args()
+
     import time
     start_time = time.time()
 
-
-    # Example use
-    dataset_root_path = './datasets/UCF101/UCF-101/'
-    videomae_ckpt = "MCG-NJU/videomae-base"
-
-    image_processor = VideoMAEImageProcessor.from_pretrained(videomae_ckpt)
-    videomae_model = VideoMAEModel.from_pretrained(videomae_ckpt)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # Example Use
+    image_processor = VideoMAEImageProcessor.from_pretrained(args.videomae_ckpt)
+    videomae_model = VideoMAEModel.from_pretrained(args.videomae_ckpt)
+    device = torch.device("cuda" if args.use_gpu and torch.cuda.is_available() else "cpu")
     print("device:", device)
 
-    train_dataset, test_seen_dataset, test_unseen_dataset = data.get_iterable_dataset(dataset_root_path, image_processor,
+    train_dataset, test_seen_dataset, test_unseen_dataset = data.get_iterable_dataset(args.data_path, image_processor,
                                                                         num_frames_to_sample=16, sample_rate=8, fps=30)
     print("datasets", train_dataset.num_videos, test_seen_dataset.num_videos, test_unseen_dataset.num_videos)
     
@@ -141,7 +153,7 @@ if __name__ == "__main__":
     
     
     # text features
-    text_features = utils.get_text_features(device)
+    text_features = utils.get_text_features(device, encoder_choice=args.text_encoder)
 
     model = transformerNet.TempNet(videomae_model, text_features, av_emb_size=768, device=device)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
