@@ -4,6 +4,8 @@ import clip
 import torch
 from msclap import CLAP
 
+from models import *
+
 # def get_labels(root_path):
 #     dataset_root_path = pathlib.Path(root_path)
 
@@ -54,7 +56,7 @@ def get_text_features(device, encoder_choice='CLIP'):
             text_features = clip_model.encode_text(text_inputs)
 
     elif encoder_choice == 'CLAP':
-        clap_model = CLAP(version = '2023', use_cuda=True)
+        clap_model = CLAP(version = '2023', use_cuda=(device == "cuda"))
         with torch.no_grad():
             text_features = clap_model.get_text_embeddings([f"a video of {c}"for c in class_labels])
 
@@ -65,3 +67,10 @@ def get_text_features(device, encoder_choice='CLIP'):
     text_features /= text_features.norm(dim=-1, keepdim=True)
 
     return text_features.float()
+
+def load_audio_resnet(layers: int, resnet_ckpt: str | None, freeze: bool, num_classes: int) -> torch.nn.Module:
+    net = AudioResNet(layers, freeze, num_classes)
+    if resnet_ckpt is not None:
+        net.load(resnet_ckpt)
+    
+    return net

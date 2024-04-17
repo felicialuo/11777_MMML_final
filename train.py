@@ -116,7 +116,11 @@ def parse_args():
     
     parser.add_argument("--data_path", type=str, default="./datasets/UCF101/UCF-101/")
     parser.add_argument("--videomae_ckpt", type=str, default="MCG-NJU/videomae-base")
-    parser.add_argument("--audiomae_ckpt", type=str, default="./Models/AudioMAE/finetuned.pth")
+
+    parser.add_argument("--audiores_ckpt", type=str, default="./Models/AudioResNet/finetuned-L18.pth")
+    parser.add_argument("--audiores_layers", type=int, default=18,
+                        choices=[18, 34, 50, 101, 134])
+
     parser.add_argument("--text_encoder", type=str, default="CLIP",
                         choices=["CLIP", "CLAP"])
 
@@ -149,7 +153,7 @@ if __name__ == "__main__":
     
     
     # text features
-    text_features = utils.get_text_features(device)
+    text_features = utils.get_text_features(device, encoder_choice=args.text_encoder)
 
     model = transformerNet.TempNet(videomae_model, text_features, av_emb_size=768, device=device)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
