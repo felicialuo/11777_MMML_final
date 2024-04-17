@@ -2,6 +2,7 @@ import pathlib
 import csv
 import clip
 import torch
+from msclap import CLAP
 
 # def get_labels(root_path):
 #     dataset_root_path = pathlib.Path(root_path)
@@ -39,15 +40,27 @@ def get_labels(csv_path="UCF101_AV_labels.csv"):
 
     return label2id, id2label
 
-def get_text_features(device):
-    # text_features = torch.load("UCF101_AV_text_features.pt").to(device)
-    clip_model, preprocess = clip.load("RN101", device)
-    clip_model.eval()
-    class_labels = get_labels()[0].keys()
-    text_inputs = torch.cat([clip.tokenize(f"a video of {c}")for c in class_labels]).to(device)
 
-    with torch.no_grad():
-        text_features = clip_model.encode_text(text_inputs)
+def get_text_features(device, encoder_choice='CLIP'):
+    # text_features = torch.load("UCF101_AV_text_features.pt").to(device)
+    
+    class_labels = get_labels()[0].keys()
+
+    if encoder_choice == 'CLIP':
+        clip_model, preprocess = clip.load("RN101", device)
+        clip_model.eval()
+        text_inputs = torch.cat([clip.tokenize(f"a video of {c}")for c in class_labels]).to(device)
+        with torch.no_grad():
+            text_features = clip_model.encode_text(text_inputs)
+
+    elif encoder_choice == 'CLAP':
+        clap_model = CLAP(version = '2023', use_cuda=True)
+        with torch.no_grad():
+            text_features = clap_model.get_text_embeddings([f"a video of {c}"for c in class_labels])
+
+    else: 
+        print("Unsupported encoder choice, choose from 'CLIP', 'CLAP'")
+        return
 
     text_features /= text_features.norm(dim=-1, keepdim=True)
 
