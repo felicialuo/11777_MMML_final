@@ -23,6 +23,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 from transformers import VideoMAEImageProcessor, VideoMAEForVideoClassification, TrainingArguments, Trainer
 import pytorchvideo.data
 from torch.utils.data import DistributedSampler
+import torchvision
 
 import utils
 
@@ -152,7 +153,7 @@ def investigate_video(sample_video):
 def _lambda_function(x):
     return x / 255.0
 
-def get_dataset(dataset_root_path, image_processor, num_frames_to_sample=16,
+def get_iterable_dataset(dataset_root_path, image_processor, num_frames_to_sample=16,
                 sample_rate=8, fps=30):
 
     label2id, id2label = utils.get_labels() #dataset_root_path
@@ -250,6 +251,56 @@ def get_dataset(dataset_root_path, image_processor, num_frames_to_sample=16,
 
     return train_dataset, test_seen_dataset, test_unseen_dataset
 
+def _normalization(x):
+    return x/255.0
+
+def _permute(x):
+    return x.permute(1, 0, 2, 3)
+
+def get_default_dataset(dataset_root_path, frames_per_clip = 96, step_between_clips = 48):
+    train_transform=Compose(
+                [
+                    #Lambda(_pre_permute),
+                    UniformTemporalSubsample(32),
+                    Lambda(_permute),
+                    Lambda(_normalization),
+                    Normalize(0.5, 0.5),
+                    RandomShortSideScale(min_size=256, max_size=320),
+                    RandomCrop((224, 224)),
+                    RandomHorizontalFlip(p=0.5),
+                ]
+            )
+
+
+    test_transform=Compose(
+                    [
+                        #Lambda(_pre_permute),
+                        UniformTemporalSubsample(32),
+                        Lambda(_permute),
+                        Lambda(_normalization),
+                        Normalize(0.5, 0.5),
+                        Resize((224, 224)),
+                    ]
+                )
+    
+    train_dataset = torchvision.datasets.UCF101(
+        root=dataset_root_path + "train", annotation_path=dataset_root_path + "UCF101TrainTestSplits-Kaggle/ucfTrainTestlist",
+        frames_per_clip=frames_per_clip, step_between_clips=step_between_clips, train=True, num_workers=12, output_format = "TCHW", transform=train_transform
+    )
+
+    test_seen_dataset = torchvision.datasets.UCF101(
+        root=dataset_root_path + "test_seen", annotation_path=dataset_root_path + "UCF101TrainTestSplits-Kaggle/ucfTrainTestlist",
+        frames_per_clip=frames_per_clip, step_between_clips=step_between_clips, train=False, num_workers=12, output_format = "TCHW", transform=test_transform
+    )
+
+    test_unseen_dataset = torchvision.datasets.UCF101(
+        root=dataset_root_path + "test_unseen", annotation_path=dataset_root_path + "UCF101TrainTestSplits-Kaggle/ucfTrainTestlist",
+        frames_per_clip=frames_per_clip, step_between_clips=step_between_clips, train=False, num_workers=12, output_format = "TCHW", transform=test_transform
+    )
+
+    train_dataset.num_videos, test_seen_dataset.num_videos, test_unseen_dataset.num_videos = len(train_dataset), len(test_seen_dataset), len(test_unseen_dataset)
+
+    return train_dataset, test_seen_dataset, test_unseen_dataset
 
 
 def collate_fn(examples):
@@ -268,7 +319,7 @@ def collate_fn(examples):
     # return {"pixel_values": pixel_values}
 
 
-def get_dataloader(train_dataset, test_seen_dataset, test_unseen_dataset, image_processor, collate_fn, model, batch_size=16):
+def get_iterable_dataloader(train_dataset, test_seen_dataset, test_unseen_dataset, image_processor, collate_fn, model, batch_size=16):
     num_epochs = 10
     args = TrainingArguments(
         "new_videomae",
@@ -310,20 +361,44 @@ def get_dataloader(train_dataset, test_seen_dataset, test_unseen_dataset, image_
     return train_loader, test_seen_loader, test_unseen_loader
 
 
+def get_default_dataloader(train_dataset, test_seen_dataset, test_unseen_dataset, collate_fn, batch_size=16):
+    train_loader = torch.utils.data.DataLoader(
+    train_dataset,
+    batch_size=batch_size,
+    shuffle=True,
+    collate_fn=collate_fn,
+    num_workers = 12,
+    )
 
+    test_seen_loader = torch.utils.data.DataLoader(
+    test_seen_dataset,
+    batch_size=batch_size,
+    shuffle=False,
+    collate_fn=collate_fn,
+    num_workers = 12,
+    )
 
+    test_unseen_loader = torch.utils.data.DataLoader(
+    test_unseen_dataset,
+    batch_size=batch_size,
+    shuffle=False,
+    collate_fn=collate_fn,
+    num_workers = 12,
+    )
 
-if __name__ == "__main__":
+    return train_loader, test_seen_loader, test_unseen_loader
+
+def test():
     import time
     start_time = time.time()
 
     #test load dataset
-    dataset_root_path = '../datasets/UCF101/UCF-101/'
+    dataset_root_path = './datasets/UCF101/UCF-101/'
     videomae_ckpt = "MCG-NJU/videomae-base"
 
     image_processor = VideoMAEImageProcessor.from_pretrained(videomae_ckpt)
 
-    train_dataset, test_seen_dataset, test_unseen_dataset = get_dataset(dataset_root_path, image_processor,
+    train_dataset, test_seen_dataset, test_unseen_dataset = get_default_dataset(dataset_root_path, image_processor,
                                                                         num_frames_to_sample=16, sample_rate=8, fps=30)
     print("datasets", train_dataset.num_videos, test_seen_dataset.num_videos, test_unseen_dataset.num_videos)
 
@@ -341,6 +416,66 @@ if __name__ == "__main__":
     end_time = time.time()
     elapsed_time = end_time - start_time
     print(f"Elapsed time is {elapsed_time} seconds.")
+
+
+if __name__ == "__main__":
+    from transformers import VideoMAEModel, VideoMAEImageProcessor, Trainer, TrainingArguments
+    from transformerNet import TempNet
+    import utils
+    #test()
+    dataset_root_path = './datasets/UCF101/UCF-101/'
+    videomae_ckpt = "MCG-NJU/videomae-base"
+    videomae_model = VideoMAEModel.from_pretrained(videomae_ckpt)
+    image_processor = VideoMAEImageProcessor.from_pretrained(videomae_ckpt)
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print("device:", device)
+
+    train_dataset, test_seen_dataset, test_unseen_dataset = get_default_dataset(dataset_root_path, image_processor,
+                                                                        num_frames_to_sample=16, sample_rate=8, fps=30)
+    print("datasets", train_dataset.num_videos, test_seen_dataset.num_videos, test_unseen_dataset.num_videos)
+
+    batch_size = 6
+    num_epochs = 10
+    args = TrainingArguments(
+        "new_videomae",
+        remove_unused_columns=False,
+        evaluation_strategy="epoch",
+        save_strategy="epoch",
+        learning_rate=5e-5,
+        per_device_train_batch_size=batch_size,
+        per_device_eval_batch_size=batch_size,
+        warmup_ratio=0.1,
+        logging_steps=10,
+        load_best_model_at_end=True,
+        metric_for_best_model="accuracy",
+        push_to_hub=True,
+        max_steps=(train_dataset.num_videos // batch_size) * num_epochs,
+        tf32=True,
+        #dataloader_num_workers = 1, 
+        dataloader_pin_memory = True,
+        #dataloader_drop_last = True,
+        #local_rank = -1,
+        #dataloader_persistent_workers = True
+    )
+    text_features = utils.get_text_features(device)
+
+    my_model = TempNet(videomae_model, text_features, av_emb_size=768, device=device)
+    
+
+    trainer = Trainer(
+        my_model,
+        args,
+        train_dataset=train_dataset,
+        eval_dataset=test_seen_dataset,
+        tokenizer=image_processor,
+        data_collator=collate_fn,
+    )
+
+    trainer.train()
+
+
+    
 
 
 
