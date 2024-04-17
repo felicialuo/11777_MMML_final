@@ -364,3 +364,52 @@ class AlignNet(nn.Module):
         text_feat = normalize(text_feat, dim=1)
 
         return video_feat, text_feat
+
+
+class VCLAPNet(nn.Module):
+    def __init__(self, text_features, av_emb_size=512, device=torch.device("cuda")):
+        super(VCLAPNet, self).__init__()
+        self.device= device
+        self.text_features = text_features
+
+        # classification
+        self.fc = nn.Sequential(
+            nn.Linear(av_emb_size, text_features.shape[-1]),
+            # nn.ReLU(),
+            # nn.LayerNorm(av_emb_size//2),
+            # nn.Linear(av_emb_size//2, num_class)
+        )
+
+        import clip
+        self.clip_model, preprocess = clip.load("RN101", device)
+        self.clip_model.eval()
+
+        from msclap import CLAP
+        self.clap_model = CLAP(version = '2023', use_cuda=True)
+
+        
+    def forward(self, batch):
+
+        video =  batch["pixel_values"].to(self.device)
+        b = video.shape[0]
+        video = rearrange(video, 'b t c h w -> (b t) c h w')
+
+        with torch.no_grad():
+            video_feat = self.clip_model.encode_image(video).float()
+            video_feat = rearrange(video_feat,  '(b t) d -> b t d', b=b)
+
+            # audio_feat = self.clap_model.get_audio_embeddings([audio_path])
+
+
+
+        # pooling
+        av_feat = nn.functional.avg_pool1d(video_feat.permute(0, 2, 1), kernel_size=video_feat.shape[1]).squeeze(-1) # exp (b, av_emb_size)
+        av_feat = self.fc(av_feat) # exp (b, text_emb_size)
+
+        av_features = av_feat / av_feat.norm(dim=-1, keepdim=True)
+
+        logits_per_av = 100 * av_features @ self.text_features.T # logit_scale: ViFi-CLIP 99.8748, CLIP 100
+        logits_per_text = 100 * self.text_features @ av_features.T
+
+        return logits_per_av, logits_per_text, av_features, self.text_features
+    
