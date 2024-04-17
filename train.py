@@ -45,7 +45,7 @@ def train_one_epoch(model, train_loader, device, optimizer, criterion, epoch):
 
         losses.append(loss.item())
 
-        if batch_idx % 10 == 0:
+        if batch_idx % 50 == 0:
             tqdm.write('\tTrain Set Batch {}: Current loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
                         batch_idx, loss.item(), correct, total,
                         100. * correct / total))
@@ -63,9 +63,13 @@ def eval(model, test_loader, device, criterion, epoch):
     model.eval()
     losses = []
     correct = 0
+    total = 0
+
+    batch_idx = 0
     with torch.no_grad():
         for batch in tqdm(test_loader, total=test_loader.dataset.num_videos//test_loader.batch_size+1, position=0, leave=False, desc="Test Epoch {}".format(epoch)):
             label = batch["labels"].to(device)
+            total += label.shape[0]
 
             logits_per_av, logits_per_text, av_features, text_features = model(batch)
 
@@ -74,14 +78,19 @@ def eval(model, test_loader, device, criterion, epoch):
             correct += pred.eq(label.view_as(pred)).sum().item()
             losses.append(loss.item())
 
-    total = test_loader.dataset.num_videos
+            if batch_idx % 10 == 0:
+                tqdm.write('\tTrain Set Batch {}: Current loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
+                            batch_idx, loss.item(), correct, total,
+                            100. * correct / total))
+            batch_idx += 1
+
+    # total = test_loader.dataset.num_videos
     average_loss = np.mean(losses)
     
     print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)\n'.format(
         average_loss, correct, total,
         100. * correct / total))
     return average_loss, correct / total
-
 
 
 def train(model, device, train_loader, test_seen_loader, test_unseen_loader, optimizer, criterion, scheduler, num_epoch):
@@ -123,6 +132,10 @@ def parse_args():
 
     parser.add_argument("--text_encoder", type=str, default="CLIP",
                         choices=["CLIP", "CLAP"])
+    
+    parser.add_argument("--network", type=str, default="TempNet",
+                        choices=["TempNet", "VCLAPNet"])
+    parser.add_argument("--num_epoch", type=int, default=5)
 
     parser.add_argument("--use_gpu", action="store_true")
 
@@ -155,14 +168,17 @@ if __name__ == "__main__":
     # text features
     text_features = utils.get_text_features(device, encoder_choice=args.text_encoder)
 
-    model = transformerNet.TempNet(videomae_model, text_features, av_emb_size=768, device=device)
+    if args.network == "TempNet": model = transformerNet.TempNet(videomae_model, text_features, av_emb_size=768, device=device)
+    elif args.network == "VCLAPNet": model = transformerNet.VCLAPNet(text_features, av_emb_size=512, device=device)
+
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
     criterion = nn.CrossEntropyLoss()
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
 
-    train_losses, train_accuracies, test_seen_losses, test_seen_accuracies, test_unseen_losses, test_unseen_accuracies = train(model, device, 
-                                                                                                                               train_loader, test_seen_loader, test_unseen_loader, 
-                                                                                                                               optimizer, criterion, scheduler, num_epoch=5)
+    train_losses, train_accuracies, \
+        test_seen_losses, test_seen_accuracies, \
+            test_unseen_losses, test_unseen_accuracies = train(model, device, train_loader, test_seen_loader, test_unseen_loader, 
+                                                                optimizer, criterion, scheduler, num_epoch=args.num_epoch)
 
     end_time = time.time()
     elapsed_time = end_time - start_time
