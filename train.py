@@ -120,7 +120,7 @@ if __name__ == "__main__":
 
 
     # Example use
-    dataset_root_path = '../datasets/UCF101/UCF-101/'
+    dataset_root_path = '../../DATA/UCF-101/UCF-101-SPLIT/'
     videomae_ckpt = "MCG-NJU/videomae-base"
 
     image_processor = VideoMAEImageProcessor.from_pretrained(videomae_ckpt)
