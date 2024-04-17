@@ -4,6 +4,9 @@ import torch.nn as nn
 from einops import rearrange
 import torchvision
 import videomae
+import utils
+
+from torch.nn.functional import normalize
 
 class AttentionLayer(nn.Module):
 
@@ -315,4 +318,49 @@ class TempNet(nn.Module):
         logits_per_text = 99.8748 * self.text_features @ av_features.T
 
         return logits_per_av, logits_per_text, av_features, self.text_features
+    
 
+class AlignNet(nn.Module):
+    def __init__(self, av_emb_size=512, device=torch.device("cpu")):
+        super(AlignNet, self).__init__()
+        self.device= device
+
+        self.video_encoder = torchvision.models.video.s3d(progress=True)
+        self.video_encoder.classifier = nn.Identity()
+        
+
+
+        import clip 
+        self.text_encoder ,_ = clip.load("RN101", "cpu")
+
+        #freeze video encoder
+        for param in self.video_encoder.parameters():
+            param.requires_grad = False
+        for param in self.text_encoder.parameters():
+            param.requires_grad = False
+        
+
+        self.text_adapter = nn.Sequential(
+            nn.Linear(512, 512),
+            nn.ReLU(),
+            nn.LayerNorm(av_emb_size)
+        )
+
+        self.video_adapter = nn.Sequential(
+            nn.Linear(1024, av_emb_size),
+            nn.ReLU(),
+            nn.LayerNorm(av_emb_size)
+        )
+
+    def forward(self, video, text):
+        video_feat = self.video_encoder(video)
+        video_feat = self.video_adapter(video_feat)
+
+        text_feat = self.text_encoder.encode_text(text)
+        text_feat = self.text_adapter(text_feat)
+
+        # Normalize features to prepare for contrastive loss calculation
+        video_feat = normalize(video_feat, dim=1)
+        text_feat = normalize(text_feat, dim=1)
+
+        return video_feat, text_feat
