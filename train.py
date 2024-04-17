@@ -79,7 +79,7 @@ def eval(model, test_loader, device, criterion, epoch):
             losses.append(loss.item())
 
             if batch_idx % 10 == 0:
-                tqdm.write('\tTrain Set Batch {}: Current loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
+                tqdm.write('\tTest Set Batch {}: Current loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
                             batch_idx, loss.item(), correct, total,
                             100. * correct / total))
             batch_idx += 1
