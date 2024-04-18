@@ -3,7 +3,6 @@ import torch
 import torch.nn as nn
 from einops import rearrange
 import torchvision
-import videomae
 import utils
 import os.path as osp
 from collections import OrderedDict
@@ -176,7 +175,7 @@ class AlignNet(nn.Module):
         prompts = self.prompt_learner()
                 
         # # Now pass the image into CLIP visual encoder
-        video_feat = videomae.get_videomae_feats(self.image_encoder, batch, self.device, freeze=True) #torch.Size([8, 1568, 768])
+        video_feat = utils.get_videomae_feats(self.image_encoder, batch, self.device, freeze=True) #torch.Size([8, 1568, 768])
         video_feat = nn.functional.avg_pool1d(video_feat.permute(0, 2, 1), kernel_size=video_feat.shape[1]).squeeze(-1) # exp (b, av_emb_size) torch.Size([8, 768])
         video_feat = self.fc(video_feat) #torch.Size([8, 512])
     
@@ -194,12 +193,12 @@ class AlignNet(nn.Module):
 
 
         # Finally, make the text features
-        text_features = self.text_encoder(prompts, tokenized_prompts)
+        text_feat = self.text_encoder(prompts, tokenized_prompts)
 
         video_feat = video_feat / video_feat.norm(dim=-1, keepdim=True)
-        text_features = text_features / text_features.norm(dim=-1, keepdim=True)
-        logits = logit_scale * video_feat @ text_features.t().float()
+        text_feat = text_feat / text_feat.norm(dim=-1, keepdim=True)
+        logits = logit_scale * video_feat @ text_feat.t().float()
     
 
 
-        return logits
+        return logits, logits.t(), video_feat, text_feat

@@ -10,7 +10,7 @@ from transformers import VideoMAEModel, VideoMAEImageProcessor, Trainer, Trainin
 import clip
 from vifiClip import AlignNet
 
-import utils, data, videomae, transformerNet
+import utils, data, transformerNet
 
 import argparse
 
@@ -151,6 +151,7 @@ if __name__ == "__main__":
     # Example Use
     image_processor = VideoMAEImageProcessor.from_pretrained(args.videomae_ckpt)
     videomae_model = VideoMAEModel.from_pretrained(args.videomae_ckpt)
+    utils.freeze(videomae_model)
     device = torch.device("cuda" if args.use_gpu and torch.cuda.is_available() else "cpu")
     print("device:", device)
 
@@ -172,8 +173,7 @@ if __name__ == "__main__":
 
     # clip model
     clip_model, _ = clip.load("RN101", device)
-    for name, param in clip_model.named_parameters():
-        param.requires_grad_(False)
+    utils.freeze(clip_model)
 
     if args.network == "TempNet": model = transformerNet.TempNet(videomae_model, text_features, av_emb_size=768, device=device)
     elif args.network == "VCLAPNet": model = transformerNet.VCLAPNet(text_features, av_emb_size=512, device=device)

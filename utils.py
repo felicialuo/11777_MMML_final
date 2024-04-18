@@ -2,9 +2,7 @@ import pathlib
 import csv
 import clip
 import torch
-#from msclap import CLAP
-
-from models import *
+from msclap import CLAP
 
 # def get_labels(root_path):
 #     dataset_root_path = pathlib.Path(root_path)
@@ -100,6 +98,27 @@ def get_text_features(device, encoder_choice='CLIP'):
     text_features /= text_features.norm(dim=-1, keepdim=True)
 
     return text_features.float()
+
+def freeze(model: torch.nn.Module) -> torch.nn.Module:
+    for p in model.parameters():
+        p.requires_grad = False
+    
+    return model
+
+def get_videomae_feats(model, batch, device, freeze=True):
+    inputs = {"pixel_values": batch["pixel_values"].to(device)}
+    model = model.to(device)
+    
+    if freeze:
+        with torch.no_grad():
+            outputs = model(**inputs)
+            feats = outputs.last_hidden_state # (B, 1568, 768)
+    else:
+        outputs = model(**inputs)
+        feats = outputs.last_hidden_state # (B, 1568, 768)
+
+    
+    return feats
 
 if __name__ == "__main__":
     seen_label2id, seen_id2label, unseen_label2id, unseen_id2label = get_sep_seen_unseen_labels()

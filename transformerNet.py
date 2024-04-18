@@ -3,7 +3,6 @@ import torch
 import torch.nn as nn
 from einops import rearrange
 import torchvision
-import videomae
 import utils
 
 from torch.nn.functional import normalize
@@ -306,7 +305,7 @@ class TempNet(nn.Module):
         
 
     def forward(self, batch):
-        video_feat = videomae.get_videomae_feats(self.videomae_model, batch, self.device, freeze=True) # (b, 1568, 768)
+        video_feat = utils.get_videomae_feats(self.videomae_model, batch, self.device, freeze=True) # (b, 1568, 768)
 
         # pooling
         av_feat = nn.functional.avg_pool1d(video_feat.permute(0, 2, 1), kernel_size=video_feat.shape[1]).squeeze(-1) # exp (b, av_emb_size)
