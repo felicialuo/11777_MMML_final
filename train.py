@@ -8,7 +8,7 @@ import gc
 import torch
 from transformers import VideoMAEModel, VideoMAEImageProcessor, Trainer, TrainingArguments
 import clip
-
+from vifiClip import AlignNet
 
 import utils, data, videomae, transformerNet
 
@@ -134,10 +134,11 @@ def parse_args():
                         choices=["CLIP", "CLAP"])
     
     parser.add_argument("--network", type=str, default="TempNet",
-                        choices=["TempNet", "VCLAPNet"])
+                        choices=["TempNet", "VCLAPNet", "AlignNet"])
     parser.add_argument("--num_epoch", type=int, default=5)
 
     parser.add_argument("--use_gpu", action="store_true")
+    parser.add_argument("--batch_size", type=int, default=16)
 
     return parser.parse_args()
 
@@ -158,7 +159,7 @@ if __name__ == "__main__":
     print("datasets", train_dataset.num_videos, test_seen_dataset.num_videos, test_unseen_dataset.num_videos)
     
     train_loader, test_seen_loader, test_unseen_loader = data.get_iterable_dataloader(train_dataset, test_seen_dataset, test_unseen_dataset, 
-                                                                        image_processor, data.collate_fn, videomae_model, batch_size=8)
+                                                                        image_processor, data.collate_fn, videomae_model, batch_size=args.batch_size)
     
     # train_dataset, test_seen_dataset, test_unseen_dataset = data.get_default_dataset(dataset_root_path)
     # train_loader, test_seen_loader, test_unseen_loader = data.get_default_dataloader(train_dataset, test_seen_dataset, \
@@ -167,9 +168,16 @@ if __name__ == "__main__":
     
     # text features
     text_features = utils.get_text_features(device, encoder_choice=args.text_encoder)
+    classname = list(utils.get_labels()[0].keys())
+
+    # clip model
+    clip_model, _ = clip.load("RN101", device)
+    for name, param in clip_model.named_parameters():
+        param.requires_grad_(False)
 
     if args.network == "TempNet": model = transformerNet.TempNet(videomae_model, text_features, av_emb_size=768, device=device)
     elif args.network == "VCLAPNet": model = transformerNet.VCLAPNet(text_features, av_emb_size=512, device=device)
+    elif args.network == "AlignNet": model = AlignNet(videomae_model, classname, clip_model, device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
     criterion = nn.CrossEntropyLoss()

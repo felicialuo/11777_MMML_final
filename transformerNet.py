@@ -320,50 +320,6 @@ class TempNet(nn.Module):
         return logits_per_av, logits_per_text, av_features, self.text_features
     
 
-class AlignNet(nn.Module):
-    def __init__(self, av_emb_size=512, device=torch.device("cpu")):
-        super(AlignNet, self).__init__()
-        self.device= device
-
-        self.video_encoder = torchvision.models.video.s3d(progress=True)
-        self.video_encoder.classifier = nn.Identity()
-        
-
-
-        import clip 
-        self.text_encoder ,_ = clip.load("RN101", "cpu")
-
-        #freeze video encoder
-        for param in self.video_encoder.parameters():
-            param.requires_grad = False
-        for param in self.text_encoder.parameters():
-            param.requires_grad = False
-        
-
-        self.text_adapter = nn.Sequential(
-            nn.Linear(512, 512),
-            nn.ReLU(),
-            nn.LayerNorm(av_emb_size)
-        )
-
-        self.video_adapter = nn.Sequential(
-            nn.Linear(1024, av_emb_size),
-            nn.ReLU(),
-            nn.LayerNorm(av_emb_size)
-        )
-
-    def forward(self, video, text):
-        video_feat = self.video_encoder(video)
-        video_feat = self.video_adapter(video_feat)
-
-        text_feat = self.text_encoder.encode_text(text)
-        text_feat = self.text_adapter(text_feat)
-
-        # Normalize features to prepare for contrastive loss calculation
-        video_feat = normalize(video_feat, dim=1)
-        text_feat = normalize(text_feat, dim=1)
-
-        return video_feat, text_feat
 
 
 class VCLAPNet(nn.Module):
@@ -384,8 +340,8 @@ class VCLAPNet(nn.Module):
         self.clip_model, preprocess = clip.load("RN101", device)
         self.clip_model.eval()
 
-        from msclap import CLAP
-        self.clap_model = CLAP(version = '2023', use_cuda=True)
+        #from msclap import CLAP
+        #self.clap_model = CLAP(version = '2023', use_cuda=True)
 
         
     def forward(self, batch):
@@ -404,7 +360,8 @@ class VCLAPNet(nn.Module):
 
         # pooling
         av_feat = nn.functional.avg_pool1d(video_feat.permute(0, 2, 1), kernel_size=video_feat.shape[1]).squeeze(-1) # exp (b, av_emb_size)
-        av_feat = self.fc(av_feat) # exp (b, text_emb_size)
+        av_feat = self.fc(av_feat) +  av_feat
+        # exp (b, text_emb_size)
 
         av_features = av_feat / av_feat.norm(dim=-1, keepdim=True)
 

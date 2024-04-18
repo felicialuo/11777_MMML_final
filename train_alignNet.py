@@ -71,131 +71,199 @@ clip_templates = {
     'WritingOnBoard': 'A person writing on a board with a marker or chalk, conveying information.'
     }
 
-def contrastive_loss(video_feat, text_feat, device = 'cpu'):
-        # Assuming video_feat and text_feat are already normalized
-        cosine_sim = torch.mm(video_feat, text_feat.t()).to(device)
-        labels = torch.arange(cosine_sim.size(0)).to(device)
-        loss_video = nn.CrossEntropyLoss()
-        loss_text = nn.CrossEntropyLoss()
-        loss = (loss_video(video_feat, labels) + loss_text(text_feat, labels))/2
-        return loss
+import os
+import pathlib
+from tqdm import tqdm
+import numpy as np
+import torch.nn as nn
+import gc
 
-def accuracy(output, target, topk=(1,)):
-    pred = output.topk(max(topk), 1, True, True)[1].t()
-    correct = pred.eq(target.view(1, -1).expand_as(pred))
-    return [float(correct[:k].reshape(-1).float().sum(0, keepdim=True).cpu().numpy()) for k in topk]
-     
+import torch
+from transformers import VideoMAEModel, VideoMAEImageProcessor, Trainer, TrainingArguments
+import clip
+from vifiClip import AlignNet
 
-def train_one_epoch(model, train_loader, device, optimizer, epoch, id_mapping):
+import utils, data, videomae, transformerNet
 
-    seen_label2id, seen_id2label, unseen_label2id, unseen_id2label = utils.get_sep_seen_unseen_labels()
+import argparse
 
+import warnings
+warnings.filterwarnings("ignore")
+warnings.simplefilter("ignore", UserWarning)
+
+
+def train_one_epoch(model, train_loader, device, optimizer, criterion, epoch):
     model.train()
-    total_loss = 0
+    losses = []
     correct = 0
-    total_num = 0
-    total_batch = 0
-    for i, batch in enumerate(tqdm(train_loader, total=train_loader.dataset.num_videos//train_loader.batch_size+1, position=0, leave=False, desc="Train Epoch {}".format(epoch))):
-        video = batch['pixel_values'].permute(0, 2, 1, 3, 4).to(device)
-        labels = batch['labels'].to(device)
-        texts = torch.cat([clip.tokenize(f"a video of a {seen_id2label[c.cpu().item()]}")for c in labels]).to(device)
-        optimizer.zero_grad()
-        video_feat, text_feat = model(video, texts)
-        loss = contrastive_loss(video_feat, text_feat, device = device)
+    total = 0
+    
+    batch_idx = 0
+    for batch in tqdm(train_loader, total=train_loader.dataset.num_videos//train_loader.batch_size+1, position=0, leave=False, desc="Train Epoch {}".format(epoch)):
+        label = batch["labels"].to(device)
+        total += label.shape[0]
+
+        logits = model(batch)
+        loss = criterion(logits, label)
         loss.backward()
         optimizer.step()
-        total_loss += loss.item()
-        total_batch += 1
-        total_num += labels.shape[0]
+        
+        pred = logits.argmax(dim=1, keepdim=True)
+        correct += pred.eq(label.view_as(pred)).sum().item()
 
-        if i % 10 == 0:
-            tqdm.write('\tTrain Set Batch {}: Current loss: {:.4f}. '.format(
-                        i, loss.item()))
+        # release memory
+        del batch
+        torch.cuda.empty_cache()
+        gc.collect()
 
-    return total_loss / total_batch, 100 * correct / total_num
+        losses.append(loss.item())
 
-def eval(model, test_loader, device, epoch, id_mapping, seen=True):
-    
-    seen_label2id, seen_id2label, unseen_label2id, unseen_id2label = utils.get_sep_seen_unseen_labels()
+        if batch_idx % 10 == 0:
+            tqdm.write('\tTrain Set Batch {}: Current loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
+                        batch_idx, loss.item(), correct, total,
+                        100. * correct / total))
+        batch_idx += 1
+
+    average_loss = np.mean(losses)
+
+    print('\nTrain set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)\n'.format(
+        average_loss, correct, total,
+        100. * correct / total))
+    return average_loss, correct / total
+
+
+def eval(model, test_loader, device, criterion, epoch):
     model.eval()
+    losses = []
+    correct = 0
+    total = 0
 
-    if seen:
-        texts = torch.cat([clip.tokenize(f"a video of a {seen_id2label[c]}")for c in seen_id2label]).to(device)
-    else:
-        texts = torch.cat([clip.tokenize(f"a video of a {unseen_id2label[c]}")for c in unseen_id2label]).to(device)
-
-    total_loss = 0
-    total_correct = 0
-    total_batch = 0
-    total_num = 0
+    batch_idx = 0
     with torch.no_grad():
-        for i, batch in enumerate(tqdm(test_loader, total=test_loader.dataset.num_videos//test_loader.batch_size+1, position=0, leave=False, desc="Test Epoch {}".format(epoch))):
-            video = batch['pixel_values'].permute(0, 2, 1, 3, 4).to(device)
-            labels = batch['labels'].to(device)
+        for batch in tqdm(test_loader, total=test_loader.dataset.num_videos//test_loader.batch_size+1, position=0, leave=False, desc="Test Epoch {}".format(epoch)):
+            label = batch["labels"].to(device)
+            total += label.shape[0]
 
-            
-            
-            video_feat, text_feat = model(video, texts)
-            #loss = contrastive_loss(video_feat, text_feat)
-            #total_loss += loss.item()
-            similarity = (100.0 * video_feat @ text_feat.T).softmax(dim=-1)
+            logits = model(batch)
 
-            pred = similarity.argmax(dim=1, keepdim=True)
-            if seen:
-                pred = torch.tensor([id_mapping[pred[i].item()] for i in range(pred.shape[0])]).to(device)
-            else:
-                pred = torch.tensor([id_mapping[pred[i].item()] for i in range(pred.shape[0])]).to(device)
-            correct = pred.eq(labels.view_as(pred)).sum().item()
-            total_correct += correct
+            loss = criterion(logits, label)
+            pred = logits.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
+            correct += pred.eq(label.view_as(pred)).sum().item()
+            losses.append(loss.item())
 
-            total_batch += 1
-            total_num += labels.shape[0]
+            if batch_idx % 10 == 0:
+                tqdm.write('\tTest Set Batch {}: Current loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
+                            batch_idx, loss.item(), correct, total,
+                            100. * correct / total))
+            batch_idx += 1
+
+    # total = test_loader.dataset.num_videos
+    average_loss = np.mean(losses)
     
-    if seen:
-        tqdm.write('\nSeen Test set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)\n'.format(
-        total_loss / total_batch, total_correct, total_num,
-        100. * total_correct / total_num))
-    else:
-        tqdm.write('\nUnseen Test set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)\n'.format(
-        total_loss / total_batch, total_correct, total_num,
-        100. * total_correct / total_num))
-    
+    print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)\n'.format(
+        average_loss, correct, total,
+        100. * correct / total))
+    return average_loss, correct / total
 
+
+def train(model, device, train_loader, test_seen_loader, test_unseen_loader, optimizer, criterion, scheduler, num_epoch):
+    model = model.to(device)
+    train_losses = [] # all one value per epoch
+    train_accuracies = []
+    test_seen_losses = []
+    test_seen_accuracies = []
+    test_unseen_losses = []
+    test_unseen_accuracies = []
+
+    for epoch in range(num_epoch):
+        train_loss, train_accuracy = train_one_epoch(model, train_loader, device, optimizer, criterion, epoch)
+        train_losses.append(train_loss) # average loss of every epoch
+        train_accuracies.append(train_accuracy)
+
+        test_seen_loss, test_seen_accuracy = eval(model, test_seen_loader, device, criterion, epoch)
+        test_seen_losses.append(test_seen_loss) # average loss of every epoch
+        test_seen_accuracies.append(test_seen_accuracy)
+
+        test_unseen_loss, test_unseen_accuracy = eval(model, test_unseen_loader, device, criterion, epoch)
+        test_unseen_losses.append(test_unseen_loss) # average loss of every epoch
+        test_unseen_accuracies.append(test_unseen_accuracy)
+
+        scheduler.step()
+
+    return train_losses, train_accuracies, test_seen_losses, test_seen_accuracies, test_unseen_losses, test_unseen_accuracies
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description='Multi-Modal Machine Learning Project, Human Activity Recognition')
+    
+    parser.add_argument("--data_path", type=str, default="./datasets/UCF101/UCF-101/")
+    parser.add_argument("--videomae_ckpt", type=str, default="MCG-NJU/videomae-base")
+
+    parser.add_argument("--audiores_ckpt", type=str, default="./Models/AudioResNet/finetuned-L18.pth")
+    parser.add_argument("--audiores_layers", type=int, default=18,
+                        choices=[18, 34, 50, 101, 134])
+
+    parser.add_argument("--text_encoder", type=str, default="CLIP",
+                        choices=["CLIP", "CLAP"])
+    
+    parser.add_argument("--network", type=str, default="TempNet",
+                        choices=["TempNet", "VCLAPNet", "AlignNet"])
+    parser.add_argument("--num_epoch", type=int, default=5)
+
+    parser.add_argument("--use_gpu", action="store_true")
+
+    return parser.parse_args()
 
 if __name__ == "__main__":
+    args = parse_args()
 
-    # Example use
-    dataset_root_path = './datasets/UCF101/UCF-101/'
-    videomae_ckpt = "MCG-NJU/videomae-base"
+    import time
+    start_time = time.time()
 
-    image_processor = VideoMAEImageProcessor.from_pretrained(videomae_ckpt)
-    videomae_model = VideoMAEModel.from_pretrained(videomae_ckpt)
-    
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # Example Use
+    image_processor = VideoMAEImageProcessor.from_pretrained(args.videomae_ckpt)
+    videomae_model = VideoMAEModel.from_pretrained(args.videomae_ckpt)
+    device = torch.device("cuda" if args.use_gpu and torch.cuda.is_available() else "cpu")
     print("device:", device)
 
-    train_dataset, test_seen_dataset, test_unseen_dataset = data.get_iterable_dataset(dataset_root_path, image_processor,
+    train_dataset, test_seen_dataset, test_unseen_dataset = data.get_iterable_dataset(args.data_path, image_processor,
                                                                         num_frames_to_sample=16, sample_rate=8, fps=30)
     print("datasets", train_dataset.num_videos, test_seen_dataset.num_videos, test_unseen_dataset.num_videos)
     
     train_loader, test_seen_loader, test_unseen_loader = data.get_iterable_dataloader(train_dataset, test_seen_dataset, test_unseen_dataset, 
-                                                                        image_processor, data.collate_fn, videomae_model, batch_size=64)
+                                                                        image_processor, data.collate_fn, videomae_model, batch_size=32)
     
-    del videomae_model
-    torch.cuda.empty_cache()
-    gc.collect()
+    # train_dataset, test_seen_dataset, test_unseen_dataset = data.get_default_dataset(dataset_root_path)
+    # train_loader, test_seen_loader, test_unseen_loader = data.get_default_dataloader(train_dataset, test_seen_dataset, \
+    #                                                                                  test_unseen_dataset, data.collate_fn, batch_size=16)
+    
+    
+    # text features
+    text_features = utils.get_text_features(device, encoder_choice=args.text_encoder)
+    classname = list(utils.get_labels()[0].keys())
 
-    seen_id2all_id, unseen_id2all_id = utils.get_id2id_mapping()
-        
-    model = transformerNet.AlignNet(device = device)
-    model = model.to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+    # clip model
+    clip_model, _ = clip.load("RN101", device)
+    for name, param in clip_model.named_parameters():
+        param.requires_grad_(False)
 
-    print(seen_id2all_id, unseen_id2all_id)
+    if args.network == "TempNet": model = transformerNet.TempNet(videomae_model, text_features, av_emb_size=768, device=device)
+    elif args.network == "VCLAPNet": model = transformerNet.VCLAPNet(text_features, av_emb_size=512, device=device)
+    elif args.network == "AlignNet": model = AlignNet(videomae_model, classname, clip_model, device)
 
-    for e in range(10):
-        print(f"Epoch {e}")
-        train_one_epoch(model, train_loader, device, optimizer, e, seen_id2all_id)
-        eval(model, test_seen_loader, device, e, seen_id2all_id, seen=True)
-        eval(model, test_unseen_loader, device, e, unseen_id2all_id, seen=False)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-6)
+    criterion = nn.CrossEntropyLoss()
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
+
+    train_losses, train_accuracies, \
+        test_seen_losses, test_seen_accuracies, \
+            test_unseen_losses, test_unseen_accuracies = train(model, device, train_loader, test_seen_loader, test_unseen_loader, 
+                                                                optimizer, criterion, scheduler, num_epoch=args.num_epoch)
+
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    print(f"Elapsed time is {elapsed_time} seconds.")
+
+
+
     
