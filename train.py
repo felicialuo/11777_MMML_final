@@ -8,9 +8,9 @@ import gc
 import torch
 from transformers import VideoMAEModel, VideoMAEImageProcessor, Trainer, TrainingArguments
 import clip
-from vifiClip import AlignNet
+from models import AlignNet, TempNet, VCLAPNet
 
-import utils, data, transformerNet
+import utils, data
 
 import argparse
 
@@ -175,8 +175,8 @@ if __name__ == "__main__":
     clip_model, _ = clip.load("RN101", device)
     utils.freeze(clip_model)
 
-    if args.network == "TempNet": model = transformerNet.TempNet(videomae_model, text_features, av_emb_size=768, device=device)
-    elif args.network == "VCLAPNet": model = transformerNet.VCLAPNet(text_features, av_emb_size=512, device=device)
+    if args.network == "TempNet": model = TempNet(videomae_model, text_features, av_emb_size=768, device=device)
+    elif args.network == "VCLAPNet": model = VCLAPNet(text_features, av_emb_size=512, device=device)
     elif args.network == "AlignNet": model = AlignNet(videomae_model, classname, clip_model, device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)

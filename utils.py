@@ -27,7 +27,7 @@ from msclap import CLAP
 #     return label2id, id2label
 
 
-def get_labels(csv_path="UCF101_AV_labels.csv"):
+def get_labels(csv_path="csv/UCF101_AV_labels.csv"):
     label2id = {}
     id2label = {}
     with open(csv_path, mode='r') as file:
