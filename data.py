@@ -420,7 +420,7 @@ def test():
 
 if __name__ == "__main__":
     from transformers import VideoMAEModel, VideoMAEImageProcessor, Trainer, TrainingArguments
-    from transformerNet import TempNet
+    from models import TempNet
     import utils
     #test()
     dataset_root_path = './datasets/UCF101/UCF-101/'
