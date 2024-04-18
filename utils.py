@@ -105,6 +105,13 @@ def freeze(model: torch.nn.Module) -> torch.nn.Module:
     
     return model
 
+def named_freeze(model: torch.nn.Module, names: list[str]) -> torch.nn.Module:
+    for name, p in model.named_parameters():
+        if name in names:
+            p.requires_grad = False
+    
+    return model
+
 def get_videomae_feats(model, batch, device, freeze=True):
     inputs = {"pixel_values": batch["pixel_values"].to(device)}
     model = model.to(device)
