@@ -543,12 +543,19 @@ class VLPromptLearner(nn.Module):
         return prompts
 
 class AlignNet(nn.Module):
-    def __init__(self, videomae_model, classnames, clip_model, device):
+    def __init__(self, videomae_model, classnames, clip_model, device, use_videomae=False):
         super().__init__()
         self.prompt_learner = VLPromptLearner(classnames, clip_model, device)
         self.tokenized_prompts = self.prompt_learner.tokenized_prompts
-        self.image_encoder = videomae_model
-        #self.image_encoder = clip_model.visual
+        
+        if use_videomae:
+            print("Using VideoMae model for image encoder")
+            self.image_encoder = videomae_model
+        else:
+            print("Using CLIP model for image encoder")
+            self.image_encoder = clip_model.visual
+        self.use_videomae = use_videomae
+        
         self.text_encoder = TextEncoder(clip_model)
         self.logit_scale = clip_model.logit_scale
         self.dtype = clip_model.dtype
@@ -558,30 +565,28 @@ class AlignNet(nn.Module):
             nn.Linear(768, 512), #might be a problem
         )
         
-        # for param in self.prompt_learner.parameters():
-        #     print(param, param.shape)
-        
+
     def forward(self, batch):
         tokenized_prompts = self.tokenized_prompts
         logit_scale = self.logit_scale.exp()
         prompts = self.prompt_learner()
                 
-        # # Now pass the image into CLIP visual encoder
-        video_feat = utils.get_videomae_feats(self.image_encoder, batch, self.device, freeze=True) #torch.Size([8, 1568, 768])
-        video_feat = nn.functional.avg_pool1d(video_feat.permute(0, 2, 1), kernel_size=video_feat.shape[1]).squeeze(-1) # exp (b, av_emb_size) torch.Size([8, 768])
-        video_feat = self.fc(video_feat) #torch.Size([8, 512])
-    
-    
-        # image = batch['pixel_values']
-        # b, t, c, h, w = image.size()
-        # # Remove the batch dimensions
-        # image = image.reshape(-1, c, h, w)
-        # # Now pass the image into CLIP visual encoder
-        # image_features = self.image_encoder(image.type(self.dtype))
-        # # Now again attach the batch dimensions
-        # image_features = image_features.view(b, t, -1)  # [B, T, 512]
-        # # Now take the mean along the temporal direction
-        # video_feat = image_features.mean(dim=1, keepdim=False)  # image features are now ready
+        if self.use_videomae:
+            # # Now pass the image into CLIP visual encoder
+            video_feat = utils.get_videomae_feats(self.image_encoder, batch, self.device, freeze=True) #torch.Size([8, 1568, 768])
+            video_feat = nn.functional.avg_pool1d(video_feat.permute(0, 2, 1), kernel_size=video_feat.shape[1]).squeeze(-1) # exp (b, av_emb_size) torch.Size([8, 768])
+            video_feat = self.fc(video_feat) #torch.Size([8, 512])
+        else:
+            image = batch['pixel_values']
+            b, t, c, h, w = image.size()
+            # Remove the batch dimensions
+            image = image.reshape(-1, c, h, w)
+            # Now pass the image into CLIP visual encoder
+            image_features = self.image_encoder(image.type(self.dtype))
+            # Now again attach the batch dimensions
+            image_features = image_features.view(b, t, -1)  # [B, T, 512]
+            # Now take the mean along the temporal direction
+            video_feat = image_features.mean(dim=1, keepdim=False)  # image features are now ready
 
 
         # Finally, make the text features

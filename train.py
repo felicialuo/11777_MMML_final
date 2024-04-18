@@ -45,7 +45,7 @@ def train_one_epoch(model, train_loader, device, optimizer, criterion, epoch):
 
         losses.append(loss.item())
 
-        if batch_idx % 50 == 0:
+        if batch_idx % 10 == 0:
             tqdm.write('\tTrain Set Batch {}: Current loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
                         batch_idx, loss.item(), correct, total,
                         100. * correct / total))
@@ -139,6 +139,7 @@ def parse_args():
 
     parser.add_argument("--use_gpu", action="store_true")
     parser.add_argument("--batch_size", type=int, default=16)
+    parser.add_argument("--use_videomae", action="store_true")
 
     return parser.parse_args()
 
@@ -172,12 +173,14 @@ if __name__ == "__main__":
     classname = list(utils.get_labels()[0].keys())
 
     # clip model
-    clip_model, _ = clip.load("RN101", device)
+    clip_model, _ = clip.load("ViT-L/14", device)
+    clip_model.float()
+    clip_model.eval()
     utils.freeze(clip_model)
 
     if args.network == "TempNet": model = TempNet(videomae_model, text_features, av_emb_size=768, device=device)
     elif args.network == "VCLAPNet": model = VCLAPNet(text_features, av_emb_size=512, device=device)
-    elif args.network == "AlignNet": model = AlignNet(videomae_model, classname, clip_model, device)
+    elif args.network == "AlignNet": model = AlignNet(videomae_model, classname, clip_model, device, use_videomae=args.use_videomae)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
     criterion = nn.CrossEntropyLoss()
