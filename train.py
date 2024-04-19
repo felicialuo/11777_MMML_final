@@ -179,7 +179,7 @@ if __name__ == "__main__":
     utils.freeze(clip_model)
 
     if args.network == "TempNet": model = TempNet(videomae_model, text_features, av_emb_size=768, device=device)
-    elif args.network == "VCLAPNet": model = VCLAPNet(text_features, av_emb_size=512, device=device)
+    elif args.network == "VCLAPNet": model = VCLAPNet(text_features, av_emb_size=1024, device=device)
     elif args.network == "AlignNet": model = AlignNet(videomae_model, classname, clip_model, device, use_videomae=args.use_videomae)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
