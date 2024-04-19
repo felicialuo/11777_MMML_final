@@ -14,16 +14,16 @@ class BaseFusion(Fusion):
     """
     Fusion Modules that project both modalities into fusion dim at once
     """
-    def __init__(self, dim1: int, dim2: int, fuse_dim: int) -> None:
+    def __init__(self, dim1: int, dim2: int, fuse_dim: int, projector: nn.Module = nn.Linear) -> None:
         super().__init__()
 
-        self.projection1 = nn.Linear(dim1, fuse_dim)
-        self.projection2 = nn.Linear(dim2, fuse_dim)
+        self.projection1 = projector(dim1, fuse_dim)
+        self.projection2 = projector(dim2, fuse_dim)
 
 class SummationFusion(BaseFusion):
 
-    def __init__(self, dim1: int, dim2: int, fuse_dim: int) -> None:
-        super().__init__(dim1, dim2, fuse_dim)
+    def __init__(self, dim1: int, dim2: int, fuse_dim: int, projector: nn.Module = nn.Linear) -> None:
+        super().__init__(dim1, dim2, fuse_dim, projector)
 
     def forward(self, X1: torch.Tensor, X2: torch.Tensor) -> torch.Tensor:
         X1 = self.projection1(X1)
@@ -31,8 +31,8 @@ class SummationFusion(BaseFusion):
         return X1 + X2
 
 class ConcatFusion(BaseFusion):
-    def __init__(self, dim1: int, dim2: int, fuse_dim: int) -> None:
-        super().__init__(dim1, dim2, fuse_dim)
+    def __init__(self, dim1: int, dim2: int, fuse_dim: int, projector: nn.Module = nn.Linear) -> None:
+        super().__init__(dim1, dim2, fuse_dim, projector)
 
     def forward(self, X1: torch.Tensor, X2: torch.Tensor) -> torch.Tensor:
         X1 = self.projection1(X1)
@@ -40,8 +40,8 @@ class ConcatFusion(BaseFusion):
         return torch.concat((X1, X2), dim=-1)
 
 class GatedFusion(BaseFusion):
-    def __init__(self, dim1: int, dim2: int, fuse_dim: int) -> None:
-        super().__init__(dim1, dim2, fuse_dim)
+    def __init__(self, dim1: int, dim2: int, fuse_dim: int, projector: nn.Module = nn.Linear) -> None:
+        super().__init__(dim1, dim2, fuse_dim, projector)
         # Define gates for video and audio features
         self.gate1 = nn.Sequential(
             nn.Linear(fuse_dim, fuse_dim),
@@ -92,8 +92,8 @@ class LowRankFusion(Fusion):
     
 
 class TensorFusion(BaseFusion):
-    def __init__(self, dim1, dim2, rank, num_classes):
-        super().__init__(dim1, dim2, rank)
+    def __init__(self, dim1: int, dim2: int, rank: int, num_classes: int, projector: nn.Module = nn.Linear):
+        super().__init__(dim1, dim2, rank, projector)
         self.rank = rank
         self.num_classes = num_classes
 
@@ -127,8 +127,8 @@ class TensorFusion(BaseFusion):
 
 class CrossModalAttn(BaseFusion):
 
-    def __init__(self, dim1: int, dim2: int, fuse_dim: int, num_heads: int, dropout: int, mode: int) -> None:
-        super().__init__(dim1, dim2, fuse_dim)
+    def __init__(self, dim1: int, dim2: int, fuse_dim: int, num_heads: int, dropout: int, mode: int, projector: nn.Module = nn.Linear) -> None:
+        super().__init__(dim1, dim2, fuse_dim, projector)
 
         if mode not in [0, 1, 2]:
             raise NotImplementedError("Only support a mode in [0, 1, 2]:\n"
