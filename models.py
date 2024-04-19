@@ -228,7 +228,7 @@ class VCLAPNet(nn.Module):
         # audio-visual fusion
         if self.use_audio:
             # av_feat = self.fusion(video_feat, audio_feat)
-            av_feat, _ = self.fusion(video_feat.unsqueeze(1), audio_feat.unsqueeze(1))
+            _, av_feat = self.fusion(video_feat.unsqueeze(1), audio_feat.unsqueeze(1))
             av_feat = av_feat.squeeze(1)
         else: av_feat = video_feat
 

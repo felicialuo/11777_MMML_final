@@ -155,7 +155,7 @@ def load_batch_audio_into_tensor(audio_batch: torch.Tensor, sample_rate: int, au
     for audio_time_series in audio_batch:
         processed_audio = load_audio_into_tensor(audio_time_series, sample_rate, audio_duration)
         processed_batch.append(processed_audio)
-    return torch.stack(processed_audio)
+    return torch.stack(processed_batch).unsqueeze(1)
 
 if __name__ == "__main__":
     seen_label2id, seen_id2label, unseen_label2id, unseen_id2label = get_sep_seen_unseen_labels()

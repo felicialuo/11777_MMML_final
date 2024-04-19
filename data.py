@@ -311,6 +311,10 @@ def collate_fn(examples):
     )
 
     audios = []
+    # for example in examples:
+    #     audio = example["audio"]
+    #     print('audio', audio.shape)
+
     for example in examples:
         audio = example["audio"]
         curr_len = audio.shape[0]
@@ -353,7 +357,7 @@ def get_iterable_dataloader(train_dataset, test_seen_dataset, test_unseen_datase
         push_to_hub=False,
         max_steps=(train_dataset.num_videos // batch_size) * num_epochs,
         tf32=True,
-        #dataloader_num_workers = 12, 
+        dataloader_num_workers = 12, 
         dataloader_pin_memory = True,
         #dataloader_drop_last = True,
         #local_rank = -1,
