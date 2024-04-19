@@ -18,8 +18,14 @@ class BaseFusion(Fusion):
     def __init__(self, dim1: int, dim2: int, fuse_dim: int, projector: nn.Module = nn.Linear) -> None:
         super().__init__()
 
-        self.projection1 = projector(dim1, fuse_dim)
-        self.projection2 = projector(dim2, fuse_dim)
+        if projector == nn.Linear:
+            self.projection1 = projector(dim1, fuse_dim)
+            self.projection2 = projector(dim2, fuse_dim)
+        elif projector in [nn.AdaptiveAvgPool1d, nn.AdaptiveMaxPool2d]:
+            self.projection1 = projector(fuse_dim)
+            self.projection2 = projector(fuse_dim)
+        else:
+            raise NotImplementedError("Currently only support projection to be: nn.Linear, nn.AdaptiveAvgPool1d or nn.AdaptiveMaxPool2d.")
 
 class SummationFusion(BaseFusion):
 
