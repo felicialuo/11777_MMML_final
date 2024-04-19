@@ -133,7 +133,7 @@ class TensorFusion(BaseFusion):
 
 class CrossModalAttn(BaseFusion):
 
-    def __init__(self, dim1: int, dim2: int, fuse_dim: int, num_heads: int, dropout: int, mode: int, projector: nn.Module = nn.Linear) -> None:
+    def __init__(self, dim1: int, dim2: int, fuse_dim: int, num_heads: int, dropout: float, mode: int, projector: nn.Module = nn.Linear) -> None:
         super().__init__(dim1, dim2, fuse_dim, projector)
 
         if mode not in [0, 1, 2]:
