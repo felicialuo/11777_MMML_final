@@ -175,14 +175,20 @@ if __name__ == "__main__":
     # clip model
     clip_model, _ = clip.load("ViT-L/14", device)
     clip_model.float()
-    clip_model.eval()
-    utils.freeze(clip_model)
+    #clip_model.eval()
+    #utils.freeze(clip_model)
+    
 
     if args.network == "TempNet": model = TempNet(videomae_model, text_features, av_emb_size=768, device=device)
     elif args.network == "VCLAPNet": model = VCLAPNet(text_features, av_emb_size=512, device=device)
     elif args.network == "AlignNet": model = AlignNet(videomae_model, classname, clip_model, device, use_videomae=args.use_videomae)
+    
+    if args.network == "AlignNet":
+        model.freeze(visual=False, text=False)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=2.e-06)
     criterion = nn.CrossEntropyLoss()
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
 

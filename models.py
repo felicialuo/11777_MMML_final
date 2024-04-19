@@ -439,7 +439,7 @@ class VLPromptLearner(nn.Module):
     def __init__(self, classnames, clip_model, device):
         super().__init__()
         dtype = clip_model.dtype
-        self.use_prompt_stage = True # second stage prompting?
+        self.use_prompt_stage = False # second stage prompting?
         ctx_init = "a video of a"  # initialization words (only for language prompts)
         ZS_evaluation = False
         self.PROMPT_DEPTH_TEXT = 9 # max 12, min 0, for 0 it will act as shallow language prompting (first layer)
@@ -560,6 +560,7 @@ class AlignNet(nn.Module):
         self.logit_scale = clip_model.logit_scale
         self.dtype = clip_model.dtype
         self.device = device
+        self.visual_freeze, self.text_freeze = False, False
         
         self.fc = nn.Sequential(
             nn.Linear(768, 512), #might be a problem
@@ -573,9 +574,9 @@ class AlignNet(nn.Module):
                 
         if self.use_videomae:
             # # Now pass the image into CLIP visual encoder
-            video_feat = utils.get_videomae_feats(self.image_encoder, batch, self.device, freeze=True) #torch.Size([8, 1568, 768])
+            video_feat = utils.get_videomae_feats(self.image_encoder, batch, self.device, freeze=self.visual_freeze) #torch.Size([8, 1568, 768])
             video_feat = nn.functional.avg_pool1d(video_feat.permute(0, 2, 1), kernel_size=video_feat.shape[1]).squeeze(-1) # exp (b, av_emb_size) torch.Size([8, 768])
-            video_feat = self.fc(video_feat) #torch.Size([8, 512])
+            #video_feat = self.fc(video_feat) #torch.Size([8, 512])
         else:
             image = batch['pixel_values']
             b, t, c, h, w = image.size()
@@ -599,3 +600,17 @@ class AlignNet(nn.Module):
 
 
         return logits, logits.t(), video_feat, text_feat
+    
+    
+    def freeze(self, visual = True, text = True):
+        
+        if visual:
+            utils.freeze(self.image_encoder)
+            print("Visual encoder freezed")
+            self.visual_freeze = True
+        if text:
+            utils.freeze(self.text_encoder)
+            print("Text encoder freezed")
+            self.text_freeze = True
+            
+        
