@@ -1,10 +1,11 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from models import CrossAttentionBlock
+from basicBlocks import CrossAttentionBlock
 
 class Fusion(nn.Module):
     def __init__(self) -> None:
+        super().__init__()
         pass
 
     def forward(self, X1: torch.Tensor, X2: torch.Tensor) -> torch.Tensor:
@@ -90,7 +91,6 @@ class LowRankFusion(Fusion):
         out = self.fc(fusion)
         return out
     
-
 class TensorFusion(BaseFusion):
     def __init__(self, dim1, dim2, rank, num_classes):
         super().__init__(dim1, dim2, rank)
@@ -145,7 +145,7 @@ class CrossModalAttn(BaseFusion):
             # will need va cross attention
             self.cross_attn_01 = CrossAttentionBlock(fuse_dim, num_heads, dropout)
         
-    def forward(self, X1: torch.Tensor, X2: torch.Tensor) -> tuple[torch.Tensor]:
+    def forward(self, X1: torch.Tensor, X2: torch.Tensor) -> tuple:
         # project both modalities into common token size
         X1 = self.projection1(X1)
         X2 = self.projection2(X2)
