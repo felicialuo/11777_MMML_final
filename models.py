@@ -17,7 +17,7 @@ from clip import clip
 from clip.simple_tokenizer import SimpleTokenizer as _Tokenizer
 
 import fusion
-from basicBlocks import PositionalEncoding, SelfAttentionEncoder, CrossAttentionEncoder
+from basic_blocks import PositionalEncoding, SelfAttentionEncoder, CrossAttentionEncoder
 
 
 from torch.nn.functional import normalize
