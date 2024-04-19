@@ -190,6 +190,9 @@ if __name__ == "__main__":
     if args.network == "AlignNet":
         model.freeze(visual=False, text=False)
 
+    if args.network == "VCLAPNet":
+        model.freeze(visual=True, text=True)
+
 
 
     optimizer = torch.optim.Adam(model.parameters(), lr=2.e-06)
