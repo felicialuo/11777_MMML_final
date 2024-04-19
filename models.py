@@ -17,6 +17,7 @@ from clip import clip
 from clip.simple_tokenizer import SimpleTokenizer as _Tokenizer
 
 import fusion
+from basicBlocks import PositionalEncoding, SelfAttentionEncoder, CrossAttentionEncoder
 
 
 from torch.nn.functional import normalize
@@ -194,14 +195,7 @@ class VCLAPNet(nn.Module):
         self.device = device
         self.use_audio = use_audio
         
-        self.fc = nn.Sequential(
-            nn.Linear(768, 512), #might be a problem
-        )
-        self.fc_clap = nn.Sequential(
-            nn.Linear(1024, 768), #might be a problem
-        )
-
-        self.fusion = fusion.SummationFusion(dim1=768, dim2=1024, fuse_dim=768)
+        self.fusion = fusion.SummationFusion(dim1=768, dim2=1024, fuse_dim=768, projector=nn.AdaptiveAvgPool1d)
         
 
     def forward(self, batch):
@@ -213,16 +207,17 @@ class VCLAPNet(nn.Module):
             # # Now pass the image into CLIP visual encoder
             video_feat = utils.get_videomae_feats(self.image_encoder, batch, self.device, freeze=True) #torch.Size([8, 1568, 768])
             video_feat = nn.functional.avg_pool1d(video_feat.permute(0, 2, 1), kernel_size=video_feat.shape[1]).squeeze(-1) # exp (b, av_emb_size) torch.Size([8, 768])
-            video_feat = self.fc(video_feat) #torch.Size([8, 512])
+            # video_feat = self.fc(video_feat) #torch.Size([8, 512])
         else:
             image = batch['pixel_values']
             b, t, c, h, w = image.size()
             # Remove the batch dimensions
             image = image.reshape(-1, c, h, w)
             # Now pass the image into CLIP visual encoder
-            image_features = self.image_encoder(image.type(self.dtype))
+            with torch.no_grad():
+                image_features = self.image_encoder(image.type(self.dtype))
             # Now again attach the batch dimensions
-            image_features = image_features.view(b, t, -1)  # [B, T, 512]
+            image_features = image_features.view(b, t, -1)  # [B, T, 768] if ViT-L
             # Now take the mean along the temporal direction
             video_feat = image_features.mean(dim=1, keepdim=False)  # image features are now ready
 
@@ -285,7 +280,7 @@ class VLPromptLearner(nn.Module):
     def __init__(self, classnames, clip_model, device):
         super().__init__()
         dtype = clip_model.dtype
-        self.use_prompt_stage = False # second stage prompting?
+        self.use_prompt_stage = True # second stage prompting?
         ctx_init = "a video of a"  # initialization words (only for language prompts)
         ZS_evaluation = False
         self.PROMPT_DEPTH_TEXT = 9 # max 12, min 0, for 0 it will act as shallow language prompting (first layer)
