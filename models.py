@@ -195,8 +195,9 @@ class VCLAPNet(nn.Module):
         self.device = device
         self.use_audio = use_audio
         
-        self.fusion = fusion.SummationFusion(dim1=768, dim2=1024, fuse_dim=768, projector=nn.AdaptiveAvgPool1d)
-        
+        # self.fusion = fusion.SummationFusion(dim1=768, dim2=1024, fuse_dim=768, projector=nn.AdaptiveAvgPool1d)
+        self.fusion = fusion.CrossModalAttn(dim1=768, dim2=1024, fuse_dim=768, num_heads=4, dropout=0.1, mode=2, projector=nn.AdaptiveAvgPool1d)
+
 
     def forward(self, batch):
         tokenized_prompts = self.tokenized_prompts
@@ -214,8 +215,7 @@ class VCLAPNet(nn.Module):
             # Remove the batch dimensions
             image = image.reshape(-1, c, h, w)
             # Now pass the image into CLIP visual encoder
-            with torch.no_grad():
-                image_features = self.image_encoder(image.type(self.dtype))
+            image_features = self.image_encoder(image.type(self.dtype))
             # Now again attach the batch dimensions
             image_features = image_features.view(b, t, -1)  # [B, T, 768] if ViT-L
             # Now take the mean along the temporal direction
@@ -227,9 +227,10 @@ class VCLAPNet(nn.Module):
 
         # audio-visual fusion
         if self.use_audio:
-            av_feat = self.fusion(video_feat, audio_feat)
+            # av_feat = self.fusion(video_feat, audio_feat)
+            av_feat, _ = self.fusion(video_feat.unsqueeze(1), audio_feat.unsqueeze(1))
+            av_feat = av_feat.squeeze(1)
         else: av_feat = video_feat
-
 
         # Finally, make the text features
         text_feat = self.text_encoder(prompts, tokenized_prompts)
@@ -240,6 +241,18 @@ class VCLAPNet(nn.Module):
     
 
         return logits, logits.t(), av_feat, text_feat
+    
+
+    def freeze(self, visual = True, text = True):
+        
+        if visual:
+            utils.freeze(self.image_encoder)
+            print("Visual encoder freezed")
+            self.visual_freeze = True
+        if text:
+            utils.freeze(self.text_encoder)
+            print("Text encoder freezed")
+            self.text_freeze = True
 
 
 
