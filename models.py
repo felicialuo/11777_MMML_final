@@ -370,28 +370,30 @@ class VCLAPNet(nn.Module):
         self.clip_model, preprocess = clip.load("RN101", device)
         self.clip_model.eval()
 
-        #from msclap import CLAP
-        #self.clap_model = CLAP(version = '2023', use_cuda=True)
+        from msclap import CLAP
+        self.clap_model = CLAP(version = '2023', use_cuda=True)
+        # from CLAP.msclap.CLAPWrapper import CLAPWrapper
+        # self.clap_model = CLAPWrapper(version = '2023', use_cuda=True)
 
         
     def forward(self, batch):
+        # # video
+        # video =  batch["pixel_values"].to(self.device)
+        # b = video.shape[0]
+        # video = rearrange(video, 'b t c h w -> (b t) c h w')
 
-        video =  batch["pixel_values"].to(self.device)
-        b = video.shape[0]
-        video = rearrange(video, 'b t c h w -> (b t) c h w')
+        # with torch.no_grad():
+        #     video_feat = self.clip_model.encode_image(video).float()
+        #     video_feat = rearrange(video_feat,  '(b t) d -> b t d', b=b)
 
-        with torch.no_grad():
-            video_feat = self.clip_model.encode_image(video).float()
-            video_feat = rearrange(video_feat,  '(b t) d -> b t d', b=b)
+        # # pooling
+        # av_feat = nn.functional.avg_pool1d(video_feat.permute(0, 2, 1), kernel_size=video_feat.shape[1]).squeeze(-1) # exp (b, av_emb_size)
+        # av_feat = self.fc(av_feat) +  av_feat # exp (b, text_emb_size)
 
-            # audio_feat = self.clap_model.get_audio_embeddings([audio_path])
-
-
-
-        # pooling
-        av_feat = nn.functional.avg_pool1d(video_feat.permute(0, 2, 1), kernel_size=video_feat.shape[1]).squeeze(-1) # exp (b, av_emb_size)
-        av_feat = self.fc(av_feat) +  av_feat
-        # exp (b, text_emb_size)
+        # audio
+        audio = batch["audio"].to(self.device)
+        audio_feat = self.clap_model._get_audio_embeddings(audio) #(b, 1024)
+        av_feat = self.fc(audio_feat) # exp (b, text_emb_size)
 
         av_features = av_feat / av_feat.norm(dim=-1, keepdim=True)
 
