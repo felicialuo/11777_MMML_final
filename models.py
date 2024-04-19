@@ -20,7 +20,7 @@ import fusion
 
 
 from torch.nn.functional import normalize
-from basicBlocks import *
+from basic_blocks import *
 
 
 ####################################

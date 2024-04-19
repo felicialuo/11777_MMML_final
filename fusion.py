@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from basicBlocks import CrossAttentionBlock
+from basic_blocks import CrossAttentionBlock
 
 class Fusion(nn.Module):
     def __init__(self) -> None:
