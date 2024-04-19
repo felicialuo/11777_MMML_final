@@ -22,6 +22,9 @@ import fusion
 from torch.nn.functional import normalize
 from basic_blocks import *
 
+UCF_SAMPLE_RATE = 44100
+CLAP_DURATION = 7
+
 
 ####################################
 #                                  #
@@ -224,7 +227,7 @@ class VCLAPNet(nn.Module):
             video_feat = image_features.mean(dim=1, keepdim=False)  # image features are now ready
 
         # audio feat
-        audio = batch["audio"].to(self.device)
+        audio = utils.load_batch_audio_into_tensor(batch["audio"], UCF_SAMPLE_RATE, CLAP_DURATION).to(self.device) # sample rate and duration are both hardcoded
         audio_feat = self.audio_encoder._get_audio_embeddings(audio) #(b, 1024)
 
         # audio-visual fusion

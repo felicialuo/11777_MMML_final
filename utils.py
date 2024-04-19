@@ -3,6 +3,8 @@ import csv
 import clip
 import torch
 from msclap import CLAP
+import numpy as np
+import random
 
 # def get_labels(root_path):
 #     dataset_root_path = pathlib.Path(root_path)
@@ -126,6 +128,34 @@ def get_videomae_feats(model, batch, device, freeze=True):
 
     
     return feats
+
+def load_audio_into_tensor(audio_time_series: torch.Tensor, sample_rate: int, audio_duration: int) -> torch.Tensor:
+    r"""Loads raw audio tensors."""
+    # Randomly sample a segment of audio_duration from the clip or pad to match duration
+    audio_time_series = audio_time_series.reshape(-1)
+
+    # audio_time_series is shorter than predefined audio duration,
+    # so audio_time_series is extended
+    if audio_duration * sample_rate >= audio_time_series.shape[0]:
+        repeat_factor = int(np.ceil((audio_duration * sample_rate) / audio_time_series.shape[0]))
+        # Repeat audio_time_series by repeat_factor to match audio_duration
+        audio_time_series = audio_time_series.repeat(repeat_factor)
+        # remove excess part of audio_time_series
+        audio_time_series = audio_time_series[0:audio_duration*sample_rate]
+    else:
+        # audio_time_series is longer than predefined audio duration,
+        # so audio_time_series is trimmed
+        start_index = random.randrange(audio_time_series.shape[0] - audio_duration*sample_rate)
+        audio_time_series = audio_time_series[start_index : start_index + audio_duration * sample_rate]
+    return audio_time_series
+
+def load_batch_audio_into_tensor(audio_batch: torch.Tensor, sample_rate: int, audio_duration: int) -> torch.Tensor:
+    r"""Loads a batch of audio and process them in length."""
+    processed_batch = []
+    for audio_time_series in audio_batch:
+        processed_audio = load_audio_into_tensor(audio_time_series, sample_rate, audio_duration)
+        processed_batch.append(processed_audio)
+    return torch.stack(processed_audio)
 
 if __name__ == "__main__":
     seen_label2id, seen_id2label, unseen_label2id, unseen_id2label = get_sep_seen_unseen_labels()
