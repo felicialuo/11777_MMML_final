@@ -8,6 +8,7 @@ import gc
 import torch
 from transformers import VideoMAEModel, VideoMAEImageProcessor, Trainer, TrainingArguments
 import clip
+from msclap import CLAP
 from models import AlignNet, TempNet, VCLAPNet
 
 import utils, data
@@ -179,8 +180,11 @@ if __name__ == "__main__":
     #utils.freeze(clip_model)
     
 
+    # clap model
+    clap_model = CLAP(version = '2023', use_cuda=True)
+
     if args.network == "TempNet": model = TempNet(videomae_model, text_features, av_emb_size=768, device=device)
-    elif args.network == "VCLAPNet": model = VCLAPNet(text_features, av_emb_size=1024, device=device)
+    elif args.network == "VCLAPNet": model = VCLAPNet(videomae_model, classname, clip_model, clap_model, device, use_videomae=args.use_videomae, use_audio=True)
     elif args.network == "AlignNet": model = AlignNet(videomae_model, classname, clip_model, device, use_videomae=args.use_videomae)
     
     if args.network == "AlignNet":
