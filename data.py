@@ -309,13 +309,30 @@ def collate_fn(examples):
     pixel_values = torch.stack(
         [example["video"].permute(1, 0, 2, 3) for example in examples]
     )
-    # audio = torch.stack(
-    #     [example["audio"]for example in examples]
-    # ) # currently of different length
-    audio = torch.zeros(pixel_values.shape)
+
+    audios = []
+    for example in examples:
+        audio = example["audio"]
+        curr_len = audio.shape[0]
+
+        ##### TODO: change this hardcoded target_len
+        target_len = 187776 
+        # pad the shorter wav seq
+        if curr_len < target_len:
+            pad_size = target_len - curr_len
+            left_pad = pad_size // 2
+            right_pad = pad_size - left_pad
+            audio = torch.nn.functional.pad(audio, (left_pad, right_pad), 'constant', 0)
+        # trim longer wav seq
+        elif curr_len > target_len:
+            audio = audio[:target_len]
+        
+        audios.append(audio)
+    audios = torch.stack(audios)
+    audios = audios.unsqueeze(1)
 
     labels = torch.tensor([example["label"] for example in examples])
-    return {"pixel_values": pixel_values, "audio": audio, "labels": labels}
+    return {"pixel_values": pixel_values, "audio": audios, "labels": labels}
     # return {"pixel_values": pixel_values}
 
 
