@@ -9,7 +9,7 @@ import torch
 from transformers import VideoMAEModel, VideoMAEImageProcessor, Trainer, TrainingArguments
 import clip
 from msclap import CLAP
-from models import AlignNet, TempNet, VCLAPNet
+from models import AlignNet, TempNet, VCLAPNet, AudioMAEWrapper
 
 import utils, data
 
@@ -18,6 +18,11 @@ import argparse
 import warnings
 warnings.filterwarnings("ignore")
 warnings.simplefilter("ignore", UserWarning)
+
+import os
+import sys
+sys.path.append("AudioMAE")
+import models_mae
 
 
 def train_one_epoch(model, train_loader, device, optimizer, criterion, epoch):
@@ -130,6 +135,8 @@ def parse_args():
     parser.add_argument("--audiores_ckpt", type=str, default="./Models/AudioResNet/finetuned-L18.pth")
     parser.add_argument("--audiores_layers", type=int, default=18,
                         choices=[18, 34, 50, 101, 134])
+    parser.add_argument("--audiomae_arch", type=str, default="mae_vit_base_patch16")
+    parser.add_argument("--audiomae_ckpt", type=str, default="D:/Models/AudioMAE/pretrained.pth")
 
     parser.add_argument("--text_encoder", type=str, default="CLIP",
                         choices=["CLIP", "CLAP"])
@@ -137,15 +144,19 @@ def parse_args():
     parser.add_argument("--network", type=str, default="TempNet",
                         choices=["TempNet", "VCLAPNet", "AlignNet"])
     parser.add_argument("--num_epoch", type=int, default=5)
+    parser.add_argument("--batch_size", type=int, default=16)
+    parser.add_argument("--lr", type=float, default=2e-6)
 
     parser.add_argument("--use_gpu", action="store_true")
-    parser.add_argument("--batch_size", type=int, default=16)
+    parser.add_argument("--use_iterable_DS", action="store_true")
     parser.add_argument("--use_videomae", action="store_true")
+    parser.add_argument("--use_audiomae", action="store_true")
 
     return parser.parse_args()
 
 if __name__ == "__main__":
     args = parse_args()
+    print(args)
 
     import time
     start_time = time.time()
@@ -157,16 +168,17 @@ if __name__ == "__main__":
     device = torch.device("cuda" if args.use_gpu and torch.cuda.is_available() else "cpu")
     print("device:", device)
 
-    train_dataset, test_seen_dataset, test_unseen_dataset = data.get_iterable_dataset(args.data_path, image_processor,
-                                                                        num_frames_to_sample=16, sample_rate=8, fps=30)
-    print("datasets", train_dataset.num_videos, test_seen_dataset.num_videos, test_unseen_dataset.num_videos)
-    
-    train_loader, test_seen_loader, test_unseen_loader = data.get_iterable_dataloader(train_dataset, test_seen_dataset, test_unseen_dataset, 
-                                                                        image_processor, data.collate_fn, videomae_model, batch_size=args.batch_size)
-    
-    # train_dataset, test_seen_dataset, test_unseen_dataset = data.get_default_dataset(dataset_root_path)
-    # train_loader, test_seen_loader, test_unseen_loader = data.get_default_dataloader(train_dataset, test_seen_dataset, \
-    #                                                                                  test_unseen_dataset, data.collate_fn, batch_size=16)
+    if args.use_iterable_DS:
+        train_dataset, test_seen_dataset, test_unseen_dataset = data.get_iterable_dataset(args.data_path, image_processor,
+                                                                        num_frames_to_sample=16, sample_rate=8, fps=30)        
+        train_loader, test_seen_loader, test_unseen_loader = data.get_iterable_dataloader(train_dataset, test_seen_dataset, test_unseen_dataset, 
+                                                                            image_processor, data.collate_fn, videomae_model, batch_size=args.batch_size)
+    else:
+        train_dataset, test_seen_dataset, test_unseen_dataset = data.get_default_dataset(args.data_path)
+        train_loader, test_seen_loader, test_unseen_loader = data.get_default_dataloader(train_dataset, test_seen_dataset, \
+                                                                                        test_unseen_dataset, data.collate_fn, batch_size=16)     
+
+    print("datasets", train_dataset.num_videos, test_seen_dataset.num_videos, test_unseen_dataset.num_videos)                                                                                    
     
     
     # text features
@@ -181,11 +193,19 @@ if __name__ == "__main__":
     
 
     # clap model
-    clap_model = CLAP(version = '2023', use_cuda=True)
+    clap_model, audiomae_model = None, None
+    if args.use_audiomae:
+        audiomae_model = AudioMAEWrapper(args.audiomae_ckpt, args.audiomae_arch, False).to(device)
+    else:
+        clap_model = CLAP(version = '2023', use_cuda=True)
 
-    if args.network == "TempNet": model = TempNet(videomae_model, text_features, av_emb_size=768, device=device)
-    elif args.network == "VCLAPNet": model = VCLAPNet(videomae_model, classname, clip_model, clap_model, device, use_videomae=args.use_videomae, use_audio=True)
-    elif args.network == "AlignNet": model = AlignNet(videomae_model, classname, clip_model, device, use_videomae=args.use_videomae)
+    if args.network == "TempNet": 
+        model = TempNet(videomae_model, text_features, av_emb_size=768, device=device)
+    elif args.network == "VCLAPNet": 
+        model = VCLAPNet(videomae_model, audiomae_model, classname, clip_model, clap_model, device, use_videomae=args.use_videomae, use_audio=True,
+                         use_audiomae=args.use_audiomae, use_temporal_audio=True)
+    elif args.network == "AlignNet": 
+        model = AlignNet(videomae_model, classname, clip_model, device, use_videomae=args.use_videomae)
     
     if args.network == "AlignNet":
         model.freeze(visual=False, text=False)
@@ -195,9 +215,9 @@ if __name__ == "__main__":
 
 
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=2.e-06)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     criterion = nn.CrossEntropyLoss()
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.2)
 
     train_losses, train_accuracies, \
         test_seen_losses, test_seen_accuracies, \

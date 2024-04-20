@@ -25,6 +25,42 @@ from basic_blocks import *
 
 UCF_SAMPLE_RATE = 44100
 CLAP_DURATION = 7
+AUDIOMAE_DURATION = 4
+
+####################################
+#                                  #
+#                                  #
+#   AudioMAE Wrapper               #
+#                                  #
+#                                  #
+####################################
+
+
+class AudioMAEWrapper(nn.Module):
+    def __init__(self, chkpt_dir: str, arch: str = "mae_vit_base_patch16", finetune: bool = True):
+        super(AudioMAEWrapper, self).__init__()
+
+        self.model = utils.prepare_model(chkpt_dir, arch)
+
+        if not finetune:
+            utils.freeze(self.model)
+
+    def forward(self, x: torch.Tensor, return_temporal: bool = False) -> torch.Tensor:
+        x = self.model.forward_encoder_no_mask(x)
+
+        if not return_temporal:
+            x = x.mean(dim=1)
+
+        return x
+    
+    def save(self, path: str) -> None:
+        mlp_dict = self.mlp.state_dict()
+        torch.save(mlp_dict, path)
+
+    def load(self, path: str) -> nn.Module:
+        mlp_dict = torch.load(path)
+        self.mlp.load_state_dict(mlp_dict)
+        return self
 
 
 ####################################
@@ -174,7 +210,8 @@ class TempNet(nn.Module):
 
 
 class VCLAPNet(nn.Module):
-    def __init__(self, videomae_model, classnames, clip_model, clap_model, device, use_videomae=False, use_audio=True):
+    def __init__(self, videomae_model, audiomae_model, classnames, clip_model, clap_model, device, use_videomae=False, 
+                 use_audio=True, use_audiomae=False, use_temporal_audio=False):
         super().__init__()
         self.prompt_learner = VLPromptLearner(classnames, clip_model, device)
         self.tokenized_prompts = self.prompt_learner.tokenized_prompts
@@ -187,13 +224,20 @@ class VCLAPNet(nn.Module):
             self.image_encoder = clip_model.visual
         self.use_videomae = use_videomae
 
-        self.audio_encoder = clap_model
+        if use_audiomae:
+            print("Using AudioMAE model for audio encoder")
+            self.audio_encoder = audiomae_model
+        else:
+            print("Using CLAP model for audio encoder")
+            self.audio_encoder = clap_model
+        self.use_audiomae = use_audiomae
         
         self.text_encoder = TextEncoder(clip_model)
         self.logit_scale = clip_model.logit_scale
         self.dtype = clip_model.dtype
         self.device = device
         self.use_audio = use_audio
+        self.use_temporal_audio = use_temporal_audio
         
         # self.fusion = fusion.SummationFusion(dim1=768, dim2=1024, fuse_dim=768, projector=nn.AdaptiveAvgPool1d)
         self.fusion = fusion.CrossModalAttn(dim1=768, dim2=1024, fuse_dim=768, num_heads=4, dropout=0.1, mode=2, projector=nn.AdaptiveAvgPool1d)
@@ -221,15 +265,24 @@ class VCLAPNet(nn.Module):
             # Now take the mean along the temporal direction
             video_feat = image_features.mean(dim=1, keepdim=False)  # image features are now ready
 
-        # audio feat
-        audio = utils.load_batch_audio_into_tensor(batch["audio"], UCF_SAMPLE_RATE, CLAP_DURATION).to(self.device) # sample rate and duration are both hardcoded
-        audio_feat = self.audio_encoder._get_audio_embeddings(audio) #(b, 1024)
-
         # audio-visual fusion
         if self.use_audio:
+            # audio feat
+            audio = utils.load_batch_audio_into_tensor(batch["audio"], UCF_SAMPLE_RATE, AUDIOMAE_DURATION if self.use_audiomae else CLAP_DURATION, 
+                                                       self.use_audiomae).to(self.device) # sample rate and duration are both hardcoded
+            if self.use_audiomae:
+                audio_feat = self.audio_encoder(audio, return_temporal=self.use_temporal_audio)
+            else:
+                audio_feat = self.audio_encoder._get_audio_embeddings(audio, return_temporal=self.use_temporal_audio) #(b, 1024)
             # av_feat = self.fusion(video_feat, audio_feat)
-            _, av_feat = self.fusion(video_feat.unsqueeze(1), audio_feat.unsqueeze(1))
-            av_feat = av_feat.squeeze(1)
+            if isinstance(self.fusion, fusion.CrossModalAttn):
+                if len(video_feat.shape) == 2: video_feat = video_feat.unsqueeze(1)
+                if len(audio_feat.shape) == 2: audio_feat = audio_feat.unsqueeze(1)
+                _, av_feat = self.fusion(video_feat, audio_feat)
+                av_feat = torch.mean(av_feat, dim=1)
+            else:
+                av_feat = self.fusion(video_feat, audio_feat)
+            # av_feat = av_feat.squeeze(1)
         else: av_feat = video_feat
 
         # Finally, make the text features
@@ -243,12 +296,17 @@ class VCLAPNet(nn.Module):
         return logits, logits.t(), av_feat, text_feat
     
 
-    def freeze(self, visual = True, text = True):
+    def freeze(self, visual = True, audio: bool = True, text = True):
         
         if visual:
             utils.freeze(self.image_encoder)
             print("Visual encoder freezed")
             self.visual_freeze = True
+        if audio:
+            # clap is already frozen
+            utils.freeze(self.audio_encoder if self.use_audiomae else self.audio_encoder.clap)
+            print("Audio encoder freezed")
+            self.audio_freeze = True
         if text:
             utils.freeze(self.text_encoder)
             print("Text encoder freezed")
