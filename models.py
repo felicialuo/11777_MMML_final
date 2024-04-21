@@ -23,6 +23,8 @@ from basic_blocks import PositionalEncoding, SelfAttentionEncoder, CrossAttentio
 from torch.nn.functional import normalize
 from basic_blocks import *
 
+from minlora import add_lora, apply_to_lora, disable_lora, enable_lora, get_lora_params, merge_lora, name_is_lora, remove_lora, load_multiple_lora, select_lora
+
 UCF_SAMPLE_RATE = 44100
 CLAP_DURATION = 7
 AUDIOMAE_DURATION = 4
@@ -240,7 +242,7 @@ class VCLAPNet(nn.Module):
         self.use_temporal_audio = use_temporal_audio
         
         # self.fusion = fusion.SummationFusion(dim1=768, dim2=1024, fuse_dim=768, projector=nn.AdaptiveAvgPool1d)
-        self.fusion = fusion.CrossModalAttn(dim1=768, dim2=1024, fuse_dim=768, num_heads=4, dropout=0.1, mode=2, projector=nn.AdaptiveAvgPool1d)
+        self.fusion = fusion.CrossModalAttn(dim1=768, dim2=1024, fuse_dim=clip_model.text_projection.shape[1], num_heads=4, dropout=0.1, mode=2, projector=nn.AdaptiveAvgPool1d)
 
 
     def forward(self, batch):
@@ -278,7 +280,7 @@ class VCLAPNet(nn.Module):
             if isinstance(self.fusion, fusion.CrossModalAttn):
                 if len(video_feat.shape) == 2: video_feat = video_feat.unsqueeze(1)
                 if len(audio_feat.shape) == 2: audio_feat = audio_feat.unsqueeze(1)
-                _, av_feat = self.fusion(video_feat, audio_feat)
+                _, av_feat = self.fusion(audio_feat, video_feat)
                 av_feat = torch.mean(av_feat, dim=1)
             else:
                 av_feat = self.fusion(video_feat, audio_feat)
@@ -312,6 +314,11 @@ class VCLAPNet(nn.Module):
             print("Text encoder freezed")
             self.text_freeze = True
 
+
+    def add_lora(self):
+        add_lora(self.image_encoder.cpu())
+        self.image_encoder.to(self.device)
+        
 
 
 ####################################
@@ -477,8 +484,8 @@ class AlignNet(nn.Module):
         self.fc = nn.Sequential(
             nn.Linear(768, 512), #might be a problem
         )
-        
-
+                
+    
     def forward(self, batch):
         tokenized_prompts = self.tokenized_prompts
         logit_scale = self.logit_scale.exp()
@@ -524,5 +531,10 @@ class AlignNet(nn.Module):
             utils.freeze(self.text_encoder)
             print("Text encoder freezed")
             self.text_freeze = True
+            
+    
+    def add_lora(self):
+        add_lora(self.image_encoder.cpu())
+        self.image_encoder.to(self.device)
             
         
