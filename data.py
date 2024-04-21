@@ -153,7 +153,7 @@ def investigate_video(sample_video):
 def _lambda_function(x):
     return x / 255.0
 
-def get_iterable_dataset(dataset_root_path, image_processor, num_frames_to_sample=16,
+def get_iterable_dataset(dataset_choice, dataset_root_path, image_processor, num_frames_to_sample=16,
                 sample_rate=8, fps=30):
 
     label2id, id2label = utils.get_labels() #dataset_root_path
@@ -202,15 +202,6 @@ def get_iterable_dataset(dataset_root_path, image_processor, num_frames_to_sampl
         ]
     )
 
-    # Training dataset.
-    train_dataset = Ucf101(
-        data_path=os.path.join(dataset_root_path, "train"),
-        clip_sampler=pytorchvideo.data.make_clip_sampler("random", clip_duration),
-        map_label2id=label2id,
-        decode_audio=True,
-        transform=train_transform,
-        #video_sampler=DistributedSampler,
-    )
 
     # Test seen and unseen datasets' transformations.
     test_transform = Compose(
@@ -229,25 +220,62 @@ def get_iterable_dataset(dataset_root_path, image_processor, num_frames_to_sampl
         ]
     )
 
-    
-    # Test seen and unseen datasets.
-    test_seen_dataset = Ucf101(
-        data_path=os.path.join(dataset_root_path, "test_seen"),
-        clip_sampler=pytorchvideo.data.make_clip_sampler("uniform", clip_duration),
-        map_label2id=label2id,
-        decode_audio=True,
-        transform=test_transform,
-        #video_sampler=DistributedSampler,
-    )
+    if dataset_choice == 'ucf':
+        # Training dataset.
+        train_dataset = Ucf101(
+            data_path=os.path.join(dataset_root_path, "train"),
+            clip_sampler=pytorchvideo.data.make_clip_sampler("random", clip_duration),
+            map_label2id=label2id,
+            decode_audio=True,
+            transform=train_transform,
+            #video_sampler=DistributedSampler,
+        )
 
-    test_unseen_dataset = Ucf101(
-        data_path=os.path.join(dataset_root_path, "test_unseen"),
-        clip_sampler=pytorchvideo.data.make_clip_sampler("uniform", clip_duration),
-        map_label2id=label2id,
-        decode_audio=True,
-        transform=test_transform,
-        #video_sampler=DistributedSampler,
-    )
+        # Test seen and unseen datasets.
+        test_seen_dataset = Ucf101(
+            data_path=os.path.join(dataset_root_path, "test_seen"),
+            clip_sampler=pytorchvideo.data.make_clip_sampler("uniform", clip_duration),
+            map_label2id=label2id,
+            decode_audio=True,
+            transform=test_transform,
+            #video_sampler=DistributedSampler,
+        )
+
+        test_unseen_dataset = Ucf101(
+            data_path=os.path.join(dataset_root_path, "test_unseen"),
+            clip_sampler=pytorchvideo.data.make_clip_sampler("uniform", clip_duration),
+            map_label2id=label2id,
+            decode_audio=True,
+            transform=test_transform,
+            #video_sampler=DistributedSampler,
+        )
+
+    elif dataset_choice == 'kinetics':
+        # Training dataset.
+        train_dataset = pytorchvideo.data.kinetics.Kinetics(
+            data_path=os.path.join(dataset_root_path, "train_tiny"),
+            clip_sampler=pytorchvideo.data.make_clip_sampler("random", clip_duration),
+            decode_audio=True,
+            transform=train_transform,
+            #video_sampler=DistributedSampler,
+        )
+
+        # Test dataset
+        test_seen_dataset = pytorchvideo.data.kinetics.Kinetics(
+            data_path=os.path.join(dataset_root_path, "val_tiny"),
+            clip_sampler=pytorchvideo.data.make_clip_sampler("uniform", clip_duration),
+            decode_audio=True,
+            transform=test_transform,
+            #video_sampler=DistributedSampler,
+        )
+
+        test_unseen_dataset = pytorchvideo.data.kinetics.Kinetics(
+            data_path=os.path.join(dataset_root_path, "test_tiny"),
+            clip_sampler=pytorchvideo.data.make_clip_sampler("uniform", clip_duration),
+            decode_audio=True,
+            transform=test_transform,
+            #video_sampler=DistributedSampler,
+        )
 
     return train_dataset, test_seen_dataset, test_unseen_dataset
 
@@ -316,20 +344,25 @@ def collate_fn(examples):
     #     print('audio', audio.shape)
 
     for example in examples:
-        audio = example["audio"]
-        curr_len = audio.shape[0]
-
         ##### TODO: change this hardcoded target_len
         target_len = 187776 
-        # pad the shorter wav seq
-        if curr_len < target_len:
-            pad_size = target_len - curr_len
-            left_pad = pad_size // 2
-            right_pad = pad_size - left_pad
-            audio = torch.nn.functional.pad(audio, (left_pad, right_pad), 'constant', 0)
-        # trim longer wav seq
-        elif curr_len > target_len:
-            audio = audio[:target_len]
+
+        try:
+            audio = example["audio"]
+            curr_len = audio.shape[0]
+
+            
+            # pad the shorter wav seq
+            if curr_len < target_len:
+                pad_size = target_len - curr_len
+                left_pad = pad_size // 2
+                right_pad = pad_size - left_pad
+                audio = torch.nn.functional.pad(audio, (left_pad, right_pad), 'constant', 0)
+            # trim longer wav seq
+            elif curr_len > target_len:
+                audio = audio[:target_len]
+        except:
+            audio = torch.zeros(target_len)
         
         audios.append(audio)
     audios = torch.stack(audios)
