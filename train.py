@@ -197,7 +197,7 @@ if __name__ == "__main__":
     if args.use_audiomae:
         audiomae_model = AudioMAEWrapper(args.audiomae_ckpt, args.audiomae_arch, False).to(device)
     else:
-        clap_model = CLAP(version = '2023', use_cuda=True)
+        clap_model = CLAP(version = '2023', use_cuda=args.use_gpu)
 
     if args.network == "TempNet": 
         model = TempNet(videomae_model, text_features, av_emb_size=768, device=device)

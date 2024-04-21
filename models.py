@@ -362,7 +362,7 @@ class VLPromptLearner(nn.Module):
         if ZS_evaluation:
             text_aug = f"{{}}"
             tokenized_prompts = torch.cat([clip.tokenize(text_aug.format(c), context_length=77) for c in classnames]).to(device)
-            embedding = clip_model.token_embedding(tokenized_prompts).type(dtype).cuda()
+            embedding = clip_model.token_embedding(tokenized_prompts).type(dtype).to(device)
             self.register_buffer("complete_text_embeddings", embedding)
             self.tokenized_prompts = tokenized_prompts  # torch.Tensor
         elif self.use_prompt_stage:

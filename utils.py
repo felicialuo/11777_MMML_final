@@ -119,10 +119,15 @@ def freeze(model: torch.nn.Module) -> torch.nn.Module:
     
     return model
 
-def named_freeze(model: torch.nn.Module, names: list) -> torch.nn.Module:
+def named_freeze(model: torch.nn.Module, names: list, full_match: bool = True) -> torch.nn.Module:
     for name, p in model.named_parameters():
-        if name in names:
+        if full_match and name in names:
             p.requires_grad = False
+        else:
+            for sub in names:
+                if sub in name:
+                    p.requires_grad = False
+                break
     
     return model
 
