@@ -140,6 +140,8 @@ def parse_args():
 
     parser.add_argument("--text_encoder", type=str, default="CLIP",
                         choices=["CLIP", "CLAP"])
+    parser.add_argument("--clip_arch", type=str, default="ViT-L/14",
+                        choices=["ViT-L/14", "ViT-B/16", "ViT-B/32"])
     
     parser.add_argument("--network", type=str, default="TempNet",
                         choices=["TempNet", "VCLAPNet", "AlignNet"])
@@ -187,7 +189,7 @@ if __name__ == "__main__":
     classname = list(utils.get_labels()[0].keys())
 
     # clip model
-    clip_model, _ = clip.load("ViT-B/32", device)
+    clip_model, _ = clip.load(args.clip_arch, device)
     clip_model.float()
     #clip_model.eval()
     #utils.freeze(clip_model)
