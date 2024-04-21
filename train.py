@@ -20,10 +20,10 @@ import warnings
 warnings.filterwarnings("ignore")
 warnings.simplefilter("ignore", UserWarning)
 
-import os
-import sys
-sys.path.append("AudioMAE")
-import models_mae
+# import os
+# import sys
+# sys.path.append("AudioMAE")
+# import models_mae
 
 def train_one_epoch(model, train_loader, device, optimizer, criterion, epoch):
     model.train()
@@ -52,9 +52,9 @@ def train_one_epoch(model, train_loader, device, optimizer, criterion, epoch):
         correct += pred.eq(label.view_as(pred)).sum().item()
 
         # release memory
-        # del batch
-        # torch.cuda.empty_cache()
-        # gc.collect()
+        del batch
+        torch.cuda.empty_cache()
+        gc.collect()
 
         losses.append(loss.item())
 
@@ -180,6 +180,7 @@ def parse_args():
 
     parser.add_argument("--use_gpu", action="store_true")
     parser.add_argument("--use_iterable_DS", action="store_true")
+    parser.add_argument("--use_audio", action="store_true")
     parser.add_argument("--use_videomae", action="store_true")
     parser.add_argument("--use_audiomae", action="store_true")
     parser.add_argument("--use_lora", action="store_true")
@@ -235,15 +236,16 @@ if __name__ == "__main__":
 
     # clap model
     clap_model, audiomae_model = None, None
-    if args.use_audiomae:
-        audiomae_model = AudioMAEWrapper(args.audiomae_ckpt, args.audiomae_arch, False).to(device)
-    else:
-        clap_model = CLAP(version = '2023', use_cuda=args.use_gpu)
+    if args.use_audio:
+        if args.use_audiomae:
+            audiomae_model = AudioMAEWrapper(args.audiomae_ckpt, args.audiomae_arch, False).to(device)
+        else:
+            clap_model = CLAP(version = '2023', use_cuda=args.use_gpu)
 
     if args.network == "TempNet": 
         model = TempNet(videomae_model, text_features, av_emb_size=768, device=device)
     elif args.network == "VCLAPNet": 
-        model = VCLAPNet(videomae_model, audiomae_model, classname, clip_model, clap_model, device, use_videomae=args.use_videomae, use_audio=True,
+        model = VCLAPNet(videomae_model, audiomae_model, classname, clip_model, clap_model, device, use_videomae=args.use_videomae, use_audio=args.use_audio,
                          use_audiomae=args.use_audiomae, use_temporal_audio=args.use_temporal_audio)
         model.freeze(visual=True, audio=True, text=True)
     elif args.network == "AlignNet": 

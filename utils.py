@@ -11,8 +11,6 @@ import torch.nn.functional as F
 
 import os
 import sys
-sys.path.append("AudioMAE")
-import models_mae
 
 import pathlib
 if os.name == "nt":
@@ -197,6 +195,8 @@ def load_batch_audio_into_tensor(audio_batch: torch.Tensor, sample_rate: int, au
     return torch.stack(processed_batch).unsqueeze(1)
 
 def prepare_model(chkpt_dir, arch='mae_vit_base_patch16'):
+    sys.path.append("AudioMAE")
+    import models_mae
     # build model
     model = getattr(models_mae, arch)(in_chans=1, audio_exp=True,img_size=(1024,128),decoder_mode=1,decoder_depth=16)
     # load model

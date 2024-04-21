@@ -225,13 +225,14 @@ class VCLAPNet(nn.Module):
             self.image_encoder = clip_model.visual
         self.use_videomae = use_videomae
 
-        if use_audiomae:
-            print("Using AudioMAE model for audio encoder")
-            self.audio_encoder = audiomae_model
-        else:
-            print("Using CLAP model for audio encoder")
-            self.audio_encoder = clap_model
-        self.use_audiomae = use_audiomae
+        if use_audio:
+            if use_audiomae:
+                print("Using AudioMAE model for audio encoder")
+                self.audio_encoder = audiomae_model
+            else:
+                print("Using CLAP model for audio encoder")
+                self.audio_encoder = clap_model
+            self.use_audiomae = use_audiomae
         
         self.text_encoder = TextEncoder(clip_model)
         self.logit_scale = clip_model.logit_scale
@@ -319,7 +320,7 @@ class VCLAPNet(nn.Module):
             utils.freeze(self.image_encoder)
             print("Visual encoder freezed")
             self.visual_freeze = True
-        if audio:
+        if self.use_audio and audio:
             # clap is already frozen
             utils.freeze(self.audio_encoder if self.use_audiomae else self.audio_encoder.clap)
             print("Audio encoder freezed")
