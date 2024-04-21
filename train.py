@@ -186,6 +186,7 @@ def parse_args():
     parser.add_argument("--use_lora", action="store_true")
     parser.add_argument("--use_prompt_learner", action="store_true")
     parser.add_argument("--use_temporal_audio", action="store_true")
+    parser.add_argument("--use_temporal_video", action="store_true")
 
 
     parser.add_argument("--loss", type=str, default='ce',

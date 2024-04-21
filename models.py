@@ -213,7 +213,7 @@ class TempNet(nn.Module):
 
 class VCLAPNet(nn.Module):
     def __init__(self, videomae_model, audiomae_model, classnames, clip_model, clap_model, device, use_videomae=False, 
-                 use_audio=True, use_audiomae=False, use_temporal_audio=False, use_prompt_learner=True):
+                 use_audio=True, use_audiomae=False, use_temporal_audio=False, use_temporal_video=False, use_prompt_learner=True):
         super().__init__()
         
         
@@ -240,6 +240,7 @@ class VCLAPNet(nn.Module):
         self.device = device
         self.use_audio = use_audio
         self.use_temporal_audio = use_temporal_audio
+        self.use_temporal_video = use_temporal_video
 
         self.use_prompt_learner = use_prompt_learner
         if use_prompt_learner:
@@ -260,7 +261,8 @@ class VCLAPNet(nn.Module):
         if self.use_videomae:
             # # Now pass the image into CLIP visual encoder
             video_feat = utils.get_videomae_feats(self.image_encoder, batch, self.device, freeze=True) #torch.Size([8, 1568, 768])
-            video_feat = nn.functional.avg_pool1d(video_feat.permute(0, 2, 1), kernel_size=video_feat.shape[1]).squeeze(-1) # exp (b, av_emb_size) torch.Size([8, 768])
+            if not self.use_temporal_video:
+                video_feat = nn.functional.avg_pool1d(video_feat.permute(0, 2, 1), kernel_size=video_feat.shape[1]).squeeze(-1) # exp (b, av_emb_size) torch.Size([8, 768])
             # video_feat = self.fc(video_feat) #torch.Size([8, 512])
         else:
             image = batch['pixel_values']
@@ -271,8 +273,9 @@ class VCLAPNet(nn.Module):
             image_features = self.image_encoder(image.type(self.dtype))
             # Now again attach the batch dimensions
             image_features = image_features.view(b, t, -1)  # [B, T, 768] if ViT-L
-            # Now take the mean along the temporal direction
-            video_feat = image_features.mean(dim=1, keepdim=False)  # image features are now ready
+            if not self.use_temporal_video:
+                # Now take the mean along the temporal direction
+                video_feat = image_features.mean(dim=1, keepdim=False)  # image features are now ready
 
         # audio-visual fusion
         if self.use_audio:
@@ -283,6 +286,7 @@ class VCLAPNet(nn.Module):
                 audio_feat = self.audio_encoder(audio, return_temporal=self.use_temporal_audio)
             else:
                 audio_feat = self.audio_encoder._get_audio_embeddings(audio, return_temporal=self.use_temporal_audio) #(b, 1024)
+            
             # av_feat = self.fusion(video_feat, audio_feat)
             if isinstance(self.fusion, fusion.CrossModalAttn):
                 if len(video_feat.shape) == 2: video_feat = video_feat.unsqueeze(1)

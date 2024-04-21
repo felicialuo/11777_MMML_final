@@ -148,12 +148,12 @@ class CrossModalAttn(BaseFusion):
             # will need av cross attention
             layers = [CrossAttentionBlock(fuse_dim, num_heads, dropout) for _ in range(num_layers)]
             # self.cross_attn_10 = nn.Sequential(*layers)
-            self.cross_attn_blocks_10 = layers
+            self.cross_attn_blocks_10 = nn.ModuleList(layers)
         if mode != 1:
             # will need va cross attention
             layers = [CrossAttentionBlock(fuse_dim, num_heads, dropout) for _ in range(num_layers)]
             # self.cross_attn_01 = nn.Sequential(*layers)
-            self.cross_attn_blocks_01 = layers
+            self.cross_attn_blocks_01 = nn.ModuleList(layers)
         
     def forward(self, X1: torch.Tensor, X2: torch.Tensor) -> tuple:
         # project both modalities into common token size
