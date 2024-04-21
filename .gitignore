@@ -30,6 +30,7 @@ __pycache__/
 
 # ignore playground
 playground.ipynb
+notebooks/audio_mae_ucf101.ipynb
 
 wandb/
 new_videomae/
