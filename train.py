@@ -205,21 +205,17 @@ if __name__ == "__main__":
     elif args.network == "VCLAPNet": 
         model = VCLAPNet(videomae_model, audiomae_model, classname, clip_model, clap_model, device, use_videomae=args.use_videomae, use_audio=True,
                          use_audiomae=args.use_audiomae, use_temporal_audio=True)
+        model.freeze(visual=True, audio=True, text=True)
     elif args.network == "AlignNet": 
         model = AlignNet(videomae_model, classname, clip_model, device, use_videomae=args.use_videomae)
-    
-    if args.network == "AlignNet":
-        model.freeze(visual=True, text=True)
-
-    if args.network == "VCLAPNet":
-        model.freeze(visual=True, text=True)
+        model.freeze(visual=True, audio=True, text=True)
         
     if args.use_lora:
         model.add_lora()
 
 
-    for name, param in model.image_encoder.named_parameters():
-            print(name, param.requires_grad)
+    # for name, param in model.image_encoder.named_parameters():
+    #         print(name, param.requires_grad)
         
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
@@ -234,7 +230,3 @@ if __name__ == "__main__":
     end_time = time.time()
     elapsed_time = end_time - start_time
     print(f"Elapsed time is {elapsed_time} seconds.")
-
-
-
-    
