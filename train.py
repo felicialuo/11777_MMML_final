@@ -12,7 +12,7 @@ import clip
 from msclap import CLAP
 from models import AlignNet, TempNet, VCLAPNet, AudioMAEWrapper
 
-import utils, data
+import utils, data, loss_utils
 
 import argparse
 
@@ -24,23 +24,6 @@ import os
 import sys
 sys.path.append("AudioMAE")
 import models_mae
-
-
-def symmetric_ce(logits_av, logits_text, gt):
-    loss_av = nn.CrossEntropyLoss()(logits_av, gt)
-    gt_text = F.one_hot(gt, num_classes=400).T.float()
-    logits_text = F.softmax(logits_text, dim=0)
-    loss_text = nn.BCELoss()(logits_text, gt_text)
-    return (loss_av + loss_text) / 2
-
-def composite_loss(logits_av, logits_text, av_features, text_features, gt):
-    text_features = text_features[gt]
-    # mse = nn.MSELoss()(av_features, text_features)
-    device = text_features.device
-    cossim_loss = nn.CosineEmbeddingLoss()(av_features, text_features, torch.ones(av_features.shape[0]).to(device))
-    sym_ce = symmetric_ce(logits_av, logits_text, gt)
-    # return mse + sym_ce
-    return cossim_loss + sym_ce
 
 def train_one_epoch(model, train_loader, device, optimizer, criterion, epoch):
     model.train()
@@ -56,11 +39,11 @@ def train_one_epoch(model, train_loader, device, optimizer, criterion, epoch):
         logits_per_av, logits_per_text, av_features, text_features = model(batch)
 
         if criterion == 'ce':
-            loss = nn.CrossEntropyLoss()(logits_per_av, label)
+            loss = F.cross_entropy(logits_per_av, label)
         elif criterion == 'symmetric_ce':
-            loss = symmetric_ce(logits_per_av, logits_per_text, label)
+            loss = loss_utils.symmetric_ce(logits_per_av, logits_per_text, label)
         elif criterion == 'composite_loss':
-            loss = composite_loss(logits_per_av, logits_per_text, av_features, text_features, label)
+            loss = loss_utils.composite_loss(logits_per_av, logits_per_text, av_features, text_features, label)
 
         loss.backward(retain_graph=True)
         optimizer.step()
@@ -106,9 +89,9 @@ def eval(model, test_loader, device, criterion, epoch):
             if criterion == 'ce':
                 loss = nn.CrossEntropyLoss()(logits_per_av, label)
             elif criterion == 'symmetric_ce':
-                loss = symmetric_ce(logits_per_av, logits_per_text, label)
+                loss = loss_utils.symmetric_ce(logits_per_av, logits_per_text, label)
             elif criterion == 'composite_loss':
-                loss = composite_loss(logits_per_av, logits_per_text, av_features, text_features, label)
+                loss = loss_utils.composite_loss(logits_per_av, logits_per_text, av_features, text_features, label)
 
             pred = logits_per_av.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
             correct += pred.eq(label.view_as(pred)).sum().item()
