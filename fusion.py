@@ -133,7 +133,7 @@ class TensorFusion(BaseFusion):
 
 class CrossModalAttn(BaseFusion):
 
-    def __init__(self, dim1: int, dim2: int, fuse_dim: int, num_heads: int, dropout: float, mode: int, projector: nn.Module = nn.Linear) -> None:
+    def __init__(self, dim1: int, dim2: int, fuse_dim: int, num_heads: int, dropout: float, mode: int, num_layers: int = 1, projector: nn.Module = nn.Linear) -> None:
         super().__init__(dim1, dim2, fuse_dim, projector)
 
         if mode not in [0, 1, 2]:
@@ -146,23 +146,35 @@ class CrossModalAttn(BaseFusion):
 
         if mode != 0:
             # will need av cross attention
-            self.cross_attn_10 = CrossAttentionBlock(fuse_dim, num_heads, dropout)
+            layers = [CrossAttentionBlock(fuse_dim, num_heads, dropout) for _ in range(num_layers)]
+            # self.cross_attn_10 = nn.Sequential(*layers)
+            self.cross_attn_blocks_10 = layers
         if mode != 1:
             # will need va cross attention
-            self.cross_attn_01 = CrossAttentionBlock(fuse_dim, num_heads, dropout)
+            layers = [CrossAttentionBlock(fuse_dim, num_heads, dropout) for _ in range(num_layers)]
+            # self.cross_attn_01 = nn.Sequential(*layers)
+            self.cross_attn_blocks_01 = layers
         
     def forward(self, X1: torch.Tensor, X2: torch.Tensor) -> tuple:
         # project both modalities into common token size
         X1 = self.projection1(X1)
         X2 = self.projection2(X2)
 
+        def pass_attn_blocks(seq: torch.Tensor, cond: torch.Tensor, 
+                             blocks: list[CrossAttentionBlock]) -> torch.Tensor:
+            X = seq
+            for block in blocks:
+                X = block(X, cond)
+            return X
+
         # perform cross modaliti attention
         to_return = [0, 0]
         if self.mode != 0:
-            features_10 = self.cross_attn_10(X2, X1)
+            # features_10 = self.cross_attn_10(X2, X1)
+            features_10 = pass_attn_blocks(X2, X1, self.cross_attn_blocks_10)
             to_return[1] = features_10
         if self.mode != 1:
-            features_01 = self.cross_attn_01(X1, X2)
+            features_01 = pass_attn_blocks(X1, X2, self.cross_attn_blocks_01)
             to_return[0] = features_01
         
         return tuple(to_return)
