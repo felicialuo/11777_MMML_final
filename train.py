@@ -45,9 +45,9 @@ def train_one_epoch(model, train_loader, device, optimizer, criterion, epoch):
         correct += pred.eq(label.view_as(pred)).sum().item()
 
         # release memory
-        del batch
-        torch.cuda.empty_cache()
-        gc.collect()
+        # del batch
+        # torch.cuda.empty_cache()
+        # gc.collect()
 
         losses.append(loss.item())
 
@@ -151,6 +151,7 @@ def parse_args():
     parser.add_argument("--use_iterable_DS", action="store_true")
     parser.add_argument("--use_videomae", action="store_true")
     parser.add_argument("--use_audiomae", action="store_true")
+    parser.add_argument("--use_lora", action="store_true")
 
     return parser.parse_args()
 
@@ -186,7 +187,7 @@ if __name__ == "__main__":
     classname = list(utils.get_labels()[0].keys())
 
     # clip model
-    clip_model, _ = clip.load("ViT-L/14", device)
+    clip_model, _ = clip.load("ViT-B/32", device)
     clip_model.float()
     #clip_model.eval()
     #utils.freeze(clip_model)
@@ -208,12 +209,18 @@ if __name__ == "__main__":
         model = AlignNet(videomae_model, classname, clip_model, device, use_videomae=args.use_videomae)
     
     if args.network == "AlignNet":
-        model.freeze(visual=False, text=False)
+        model.freeze(visual=True, text=True)
 
     if args.network == "VCLAPNet":
         model.freeze(visual=True, text=True)
+        
+    if args.use_lora:
+        model.add_lora()
 
 
+    for name, param in model.image_encoder.named_parameters():
+            print(name, param.requires_grad)
+        
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     criterion = nn.CrossEntropyLoss()
