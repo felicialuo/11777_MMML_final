@@ -3,6 +3,7 @@ import pathlib
 from tqdm import tqdm
 import numpy as np
 import torch.nn as nn
+import torch.nn.functional as F
 import gc
 
 import torch
@@ -25,6 +26,22 @@ sys.path.append("AudioMAE")
 import models_mae
 
 
+def symmetric_ce(logits_av, logits_text, gt):
+    loss_av = nn.CrossEntropyLoss()(logits_av, gt)
+    gt_text = F.one_hot(gt, num_classes=400).T.float()
+    logits_text = F.softmax(logits_text, dim=0)
+    loss_text = nn.BCELoss()(logits_text, gt_text)
+    return (loss_av + loss_text) / 2
+
+def composite_loss(logits_av, logits_text, av_features, text_features, gt):
+    text_features = text_features[gt]
+    # mse = nn.MSELoss()(av_features, text_features)
+    device = text_features.device
+    cossim_loss = nn.CosineEmbeddingLoss()(av_features, text_features, torch.ones(av_features.shape[0]).to(device))
+    sym_ce = symmetric_ce(logits_av, logits_text, gt)
+    # return mse + sym_ce
+    return cossim_loss + sym_ce
+
 def train_one_epoch(model, train_loader, device, optimizer, criterion, epoch):
     model.train()
     losses = []
@@ -37,8 +54,15 @@ def train_one_epoch(model, train_loader, device, optimizer, criterion, epoch):
         total += label.shape[0]
 
         logits_per_av, logits_per_text, av_features, text_features = model(batch)
-        loss = criterion(logits_per_av, label)
-        loss.backward()
+
+        if criterion == 'ce':
+            loss = nn.CrossEntropyLoss()(logits_per_av, label)
+        elif criterion == 'symmetric_ce':
+            loss = symmetric_ce(logits_per_av, logits_per_text, label)
+        elif criterion == 'composite_loss':
+            loss = composite_loss(logits_per_av, logits_per_text, av_features, text_features, label)
+
+        loss.backward(retain_graph=True)
         optimizer.step()
         
         pred = logits_per_av.argmax(dim=1, keepdim=True)
@@ -79,7 +103,13 @@ def eval(model, test_loader, device, criterion, epoch):
 
             logits_per_av, logits_per_text, av_features, text_features = model(batch)
 
-            loss = criterion(logits_per_av, label)
+            if criterion == 'ce':
+                loss = nn.CrossEntropyLoss()(logits_per_av, label)
+            elif criterion == 'symmetric_ce':
+                loss = symmetric_ce(logits_per_av, logits_per_text, label)
+            elif criterion == 'composite_loss':
+                loss = composite_loss(logits_per_av, logits_per_text, av_features, text_features, label)
+
             pred = logits_per_av.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
             correct += pred.eq(label.view_as(pred)).sum().item()
             losses.append(loss.item())
@@ -98,8 +128,18 @@ def eval(model, test_loader, device, criterion, epoch):
         100. * correct / total))
     return average_loss, correct / total
 
+def save_model(model, optimizer, scheduler, epoch, ckpt_name):
+    if not os.path.exists(ckpt_name):
+        os.makedirs(ckpt_name)
+    torch.save(
+        {'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'scheduler_state_dict': scheduler.state_dict(),
+        'epoch': epoch},
+        os.path.join(ckpt_name, f'epoch{epoch}.pt'))
 
-def train(model, device, train_loader, test_seen_loader, test_unseen_loader, optimizer, criterion, scheduler, num_epoch):
+
+def train(model, device, train_loader, test_seen_loader, test_unseen_loader, optimizer, criterion, scheduler, num_epoch, ckpt_name):
     model = model.to(device)
     train_losses = [] # all one value per epoch
     train_accuracies = []
@@ -121,6 +161,8 @@ def train(model, device, train_loader, test_seen_loader, test_unseen_loader, opt
         test_unseen_losses.append(test_unseen_loss) # average loss of every epoch
         test_unseen_accuracies.append(test_unseen_accuracy)
 
+        save_model(model, optimizer, scheduler, epoch, ckpt_name)
+
         scheduler.step()
 
     return train_losses, train_accuracies, test_seen_losses, test_seen_accuracies, test_unseen_losses, test_unseen_accuracies
@@ -129,6 +171,8 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description='Multi-Modal Machine Learning Project, Human Activity Recognition')
     
+    parser.add_argument("--dataset", type=str, default="ucf",
+                        choices=["ucf", "kinetics"])
     parser.add_argument("--data_path", type=str, default="./datasets/UCF101/UCF-101/")
     parser.add_argument("--videomae_ckpt", type=str, default="MCG-NJU/videomae-base")
 
@@ -137,6 +181,8 @@ def parse_args():
                         choices=[18, 34, 50, 101, 134])
     parser.add_argument("--audiomae_arch", type=str, default="mae_vit_base_patch16")
     parser.add_argument("--audiomae_ckpt", type=str, default="D:/Models/AudioMAE/pretrained.pth")
+
+    parser.add_argument("--save_ckpt_to", type=str, default="ckpts/")
 
     parser.add_argument("--text_encoder", type=str, default="CLIP",
                         choices=["CLIP", "CLAP"])
@@ -152,6 +198,11 @@ def parse_args():
     parser.add_argument("--use_videomae", action="store_true")
     parser.add_argument("--use_audiomae", action="store_true")
     parser.add_argument("--use_lora", action="store_true")
+    parser.add_argument("--use_prompt_learner", action="store_true")
+
+
+    parser.add_argument("--loss", type=str, default='ce',
+                        choices=['ce', 'symmetric_ce', 'composite_loss'])
 
     return parser.parse_args()
 
@@ -170,7 +221,7 @@ if __name__ == "__main__":
     print("device:", device)
 
     if args.use_iterable_DS:
-        train_dataset, test_seen_dataset, test_unseen_dataset = data.get_iterable_dataset(args.data_path, image_processor,
+        train_dataset, test_seen_dataset, test_unseen_dataset = data.get_iterable_dataset(args.dataset, args.data_path, image_processor,
                                                                         num_frames_to_sample=16, sample_rate=8, fps=30)        
         train_loader, test_seen_loader, test_unseen_loader = data.get_iterable_dataloader(train_dataset, test_seen_dataset, test_unseen_dataset, 
                                                                             image_processor, data.collate_fn, videomae_model, batch_size=args.batch_size)
@@ -184,7 +235,10 @@ if __name__ == "__main__":
     
     # text features
     text_features = utils.get_text_features(device, encoder_choice=args.text_encoder)
-    classname = list(utils.get_labels()[0].keys())
+    if args.dataset == 'ucf':
+        classname = list(utils.get_labels()[0].keys())
+    elif args.dataset == 'kinetics':
+        classname = list(utils.get_labels(csv_path="csv/Kinetics400_labels.csv")[0].keys())
 
     # clip model
     clip_model, _ = clip.load("ViT-B/32", device)
@@ -204,7 +258,7 @@ if __name__ == "__main__":
         model = TempNet(videomae_model, text_features, av_emb_size=768, device=device)
     elif args.network == "VCLAPNet": 
         model = VCLAPNet(videomae_model, audiomae_model, classname, clip_model, clap_model, device, use_videomae=args.use_videomae, use_audio=True,
-                         use_audiomae=args.use_audiomae, use_temporal_audio=True)
+                         use_audiomae=args.use_audiomae, use_temporal_audio=True, use_prompt_learner=args.use_prompt_learner)
     elif args.network == "AlignNet": 
         model = AlignNet(videomae_model, classname, clip_model, device, use_videomae=args.use_videomae)
     
@@ -223,13 +277,14 @@ if __name__ == "__main__":
         
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-    criterion = nn.CrossEntropyLoss()
+    criterion = args.loss
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.2)
 
     train_losses, train_accuracies, \
         test_seen_losses, test_seen_accuracies, \
             test_unseen_losses, test_unseen_accuracies = train(model, device, train_loader, test_seen_loader, test_unseen_loader, 
-                                                                optimizer, criterion, scheduler, num_epoch=args.num_epoch)
+                                                                optimizer, criterion, scheduler, num_epoch=args.num_epoch, 
+                                                                ckpt_name=args.save_ckpt_to)
 
     end_time = time.time()
     elapsed_time = end_time - start_time
