@@ -213,10 +213,9 @@ class TempNet(nn.Module):
 
 class VCLAPNet(nn.Module):
     def __init__(self, videomae_model, audiomae_model, classnames, clip_model, clap_model, device, use_videomae=False, 
-                 use_audio=True, use_audiomae=False, use_temporal_audio=False):
+                 use_audio=True, use_audiomae=False, use_temporal_audio=False, use_prompt_learner=True):
         super().__init__()
-        self.prompt_learner = VLPromptLearner(classnames, clip_model, device)
-        self.tokenized_prompts = self.prompt_learner.tokenized_prompts
+        
         
         if use_videomae:
             print("Using VideoMae model for image encoder")
@@ -240,15 +239,22 @@ class VCLAPNet(nn.Module):
         self.device = device
         self.use_audio = use_audio
         self.use_temporal_audio = use_temporal_audio
+
+        self.use_prompt_learner = use_prompt_learner
+        if use_prompt_learner:
+            self.prompt_learner = VLPromptLearner(classnames, clip_model, device)
+            self.tokenized_prompts = self.prompt_learner.tokenized_prompts
+        else:
+            tokenized_text = torch.cat([clip.tokenize(f"a video of a {c}")for c in classnames]).to(device)
+            self.text_feat_no_prompt = self.text_encoder.encode_text(tokenized_text)
+
         
         # self.fusion = fusion.SummationFusion(dim1=768, dim2=1024, fuse_dim=768, projector=nn.AdaptiveAvgPool1d)
         self.fusion = fusion.CrossModalAttn(dim1=768, dim2=1024, fuse_dim=clip_model.text_projection.shape[1], num_heads=4, dropout=0.1, mode=2, projector=nn.AdaptiveAvgPool1d)
 
 
     def forward(self, batch):
-        tokenized_prompts = self.tokenized_prompts
         logit_scale = self.logit_scale.exp()
-        prompts = self.prompt_learner()
                 
         if self.use_videomae:
             # # Now pass the image into CLIP visual encoder
@@ -280,7 +286,10 @@ class VCLAPNet(nn.Module):
             if isinstance(self.fusion, fusion.CrossModalAttn):
                 if len(video_feat.shape) == 2: video_feat = video_feat.unsqueeze(1)
                 if len(audio_feat.shape) == 2: audio_feat = audio_feat.unsqueeze(1)
-                _, av_feat = self.fusion(audio_feat, video_feat)
+                # use attended audio feat:
+                # _, av_feat = self.fusion(video_feat, audio_feat)
+                # use attended video feat
+                av_feat, _ = self.fusion(video_feat, audio_feat)
                 av_feat = torch.mean(av_feat, dim=1)
             else:
                 av_feat = self.fusion(video_feat, audio_feat)
@@ -288,7 +297,13 @@ class VCLAPNet(nn.Module):
         else: av_feat = video_feat
 
         # Finally, make the text features
-        text_feat = self.text_encoder(prompts, tokenized_prompts)
+        if self.use_prompt_learner:
+            tokenized_prompts = self.tokenized_prompts
+            prompts = self.prompt_learner()
+            text_feat = self.text_encoder(prompts, tokenized_prompts)
+        else:
+            # skip prompt learner
+            text_feat = self.text_feat_no_prompt
 
         av_feat = av_feat / av_feat.norm(dim=-1, keepdim=True)
         text_feat = text_feat / text_feat.norm(dim=-1, keepdim=True)
@@ -339,6 +354,7 @@ class TextEncoder(nn.Module):
         self.ln_final = clip_model.ln_final
         self.text_projection = clip_model.text_projection
         self.dtype = clip_model.dtype
+        self.token_embedding = clip_model.token_embedding
 
     def forward(self, prompts, tokenized_prompts):
         x = prompts + self.positional_embedding.type(self.dtype)
@@ -352,6 +368,22 @@ class TextEncoder(nn.Module):
         x = x[torch.arange(x.shape[0]), tokenized_prompts.argmax(dim=-1)] @ self.text_projection
 
         return x
+    
+    def encode_text(self, text):
+        x = self.token_embedding(text).type(self.dtype)  # [batch_size, n_ctx, d_model]
+
+        x = x + self.positional_embedding.type(self.dtype)
+        x = x.permute(1, 0, 2)  # NLD -> LND
+        x = self.transformer(x)
+        x = x.permute(1, 0, 2)  # LND -> NLD
+        x = self.ln_final(x).type(self.dtype)
+
+        # x.shape = [batch_size, n_ctx, transformer.width]
+        # take features from the eot embedding (eot_token is the highest number in each sequence)
+        x = x[torch.arange(x.shape[0]), text.argmax(dim=-1)] @ self.text_projection
+
+        return x
+
 
 
 class VLPromptLearner(nn.Module):
