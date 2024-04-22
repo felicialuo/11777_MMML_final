@@ -45,7 +45,8 @@ def train_one_epoch(model, train_loader, device, optimizer, criterion, epoch):
         elif criterion == 'composite_loss':
             loss = loss_utils.composite_loss(logits_per_av, logits_per_text, av_features, text_features, label)
 
-        loss.backward(retain_graph=True)
+        # loss.backward(retain_graph=True)
+        loss.backward()
         optimizer.step()
         
         pred = logits_per_av.argmax(dim=1, keepdim=True)
@@ -177,6 +178,7 @@ def parse_args():
     parser.add_argument("--num_epoch", type=int, default=5)
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--lr", type=float, default=2e-6)
+    parser.add_argument("--num_crs_attn_layer", type=int, default=1)
 
     parser.add_argument("--use_gpu", action="store_true")
     parser.add_argument("--use_iterable_DS", action="store_true")
@@ -247,7 +249,7 @@ if __name__ == "__main__":
         model = TempNet(videomae_model, text_features, av_emb_size=768, device=device)
     elif args.network == "VCLAPNet": 
         model = VCLAPNet(videomae_model, audiomae_model, classname, clip_model, clap_model, device, use_videomae=args.use_videomae, use_audio=args.use_audio,
-                         use_audiomae=args.use_audiomae, use_temporal_audio=args.use_temporal_audio)
+                         use_audiomae=args.use_audiomae, use_temporal_audio=args.use_temporal_audio, num_crs_attn_layer=args.num_crs_attn_layer)
         model.freeze(visual=True, audio=True, text=True)
     elif args.network == "AlignNet": 
         model = AlignNet(videomae_model, classname, clip_model, device, use_videomae=args.use_videomae)

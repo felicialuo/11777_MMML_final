@@ -213,7 +213,8 @@ class TempNet(nn.Module):
 
 class VCLAPNet(nn.Module):
     def __init__(self, videomae_model, audiomae_model, classnames, clip_model, clap_model, device, use_videomae=False, 
-                 use_audio=True, use_audiomae=False, use_temporal_audio=False, use_temporal_video=False, use_prompt_learner=True):
+                 use_audio=True, use_audiomae=False, use_temporal_audio=False, use_temporal_video=False, use_prompt_learner=True,
+                 num_crs_attn_layer=1):
         super().__init__()
         
         
@@ -252,7 +253,9 @@ class VCLAPNet(nn.Module):
 
         
         # self.fusion = fusion.SummationFusion(dim1=768, dim2=1024, fuse_dim=768, projector=nn.AdaptiveAvgPool1d)
-        self.fusion = fusion.CrossModalAttn(dim1=768, dim2=1024, fuse_dim=clip_model.text_projection.shape[1], num_heads=4, dropout=0.1, mode=2, projector=nn.AdaptiveAvgPool1d)
+        self.fusion = fusion.CrossModalAttn(dim1=768, dim2=1024, fuse_dim=clip_model.text_projection.shape[1], \
+                                            num_heads=4, dropout=0.1, mode=2, projector=nn.AdaptiveAvgPool1d,\
+                                            num_layers=num_crs_attn_layer)
 
 
     def forward(self, batch):
