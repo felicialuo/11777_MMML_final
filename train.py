@@ -27,6 +27,7 @@ warnings.simplefilter("ignore", UserWarning)
 
 def train_one_epoch(model, train_loader, device, optimizer, criterion, epoch):
     model.train()
+    model.enable_lora()
     losses = []
     correct = 0
     total = 0
@@ -45,17 +46,16 @@ def train_one_epoch(model, train_loader, device, optimizer, criterion, epoch):
         elif criterion == 'composite_loss':
             loss = loss_utils.composite_loss(logits_per_av, logits_per_text, av_features, text_features, label)
 
-        # loss.backward(retain_graph=True)
-        loss.backward()
+        loss.backward(retain_graph=True)
         optimizer.step()
         
         pred = logits_per_av.argmax(dim=1, keepdim=True)
         correct += pred.eq(label.view_as(pred)).sum().item()
 
-        # release memory
-        del batch
-        torch.cuda.empty_cache()
-        gc.collect()
+        # # release memory
+        # del batch
+        # torch.cuda.empty_cache()
+        # gc.collect()
 
         losses.append(loss.item())
 
@@ -73,11 +73,16 @@ def train_one_epoch(model, train_loader, device, optimizer, criterion, epoch):
     return average_loss, correct / total
 
 
-def eval(model, test_loader, device, criterion, epoch):
+def eval(model, test_loader, device, criterion, epoch, seen=True):
     model.eval()
     losses = []
     correct = 0
     total = 0
+    
+    if seen:
+        model.enable_lora()
+    else:
+        model.disable_lora()
 
     batch_idx = 0
     with torch.no_grad():
@@ -141,7 +146,7 @@ def train(model, device, train_loader, test_seen_loader, test_unseen_loader, opt
         test_seen_losses.append(test_seen_loss) # average loss of every epoch
         test_seen_accuracies.append(test_seen_accuracy)
 
-        test_unseen_loss, test_unseen_accuracy = eval(model, test_unseen_loader, device, criterion, epoch)
+        test_unseen_loss, test_unseen_accuracy = eval(model, test_unseen_loader, device, criterion, epoch, seen=False)
         test_unseen_losses.append(test_unseen_loss) # average loss of every epoch
         test_unseen_accuracies.append(test_unseen_accuracy)
 
@@ -257,17 +262,23 @@ if __name__ == "__main__":
         model = AlignNet(videomae_model, classname, clip_model, device, use_videomae=args.use_videomae)
         model.freeze(visual=True, audio=True, text=True)
         
+    del image_processor
+    del videomae_model
+    torch.cuda.empty_cache()
+    gc.collect()
+    
     if args.use_lora:
         model.add_lora()
+        
 
-
-    # for name, param in model.image_encoder.named_parameters():
-    #         print(name, param.requires_grad)
+    print(model)
+    for name, param in model.image_encoder.named_parameters():
+            print(name, param.requires_grad)
         
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     criterion = args.loss
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.2)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.2)
 
     train_losses, train_accuracies, \
         test_seen_losses, test_seen_accuracies, \

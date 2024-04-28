@@ -346,7 +346,15 @@ class VCLAPNet(nn.Module):
     def add_lora(self):
         add_lora(self.image_encoder.cpu())
         self.image_encoder.to(self.device)
-        
+    
+    
+    def disable_lora(self):
+        print("****Disabling LoRA****")
+        disable_lora(self.image_encoder)
+    
+    def enable_lora(self):
+        print("****Enabling LoRA****")
+        enable_lora(self.image_encoder)
 
 
 ####################################
@@ -581,5 +589,5 @@ class AlignNet(nn.Module):
     def add_lora(self):
         add_lora(self.image_encoder.cpu())
         self.image_encoder.to(self.device)
-            
+        
         
