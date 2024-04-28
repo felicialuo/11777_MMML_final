@@ -46,7 +46,7 @@ def train_one_epoch(model, train_loader, device, optimizer, criterion, epoch):
         elif criterion == 'composite_loss':
             loss = loss_utils.composite_loss(logits_per_av, logits_per_text, av_features, text_features, label)
         elif criterion == "euclidean_distance":
-            loss = loss_utils.euclidean_distance_loss(logits_per_av, logits_per_text, av_features, text_features, label)
+            loss = loss_utils.euclidean_distance_loss(av_features, text_features, label)
 
         loss.backward(retain_graph=(criterion == "composite_loss"))
         optimizer.step()
