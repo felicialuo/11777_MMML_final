@@ -45,7 +45,7 @@ def train_one_epoch(model, train_loader, device, optimizer, criterion, epoch):
         elif criterion == 'composite_loss':
             loss = loss_utils.composite_loss(logits_per_av, logits_per_text, av_features, text_features, label)
 
-        loss.backward(retain_graph=True)
+        loss.backward(retain_graph=(True if criterion == "composite_loss" else False))
         optimizer.step()
         
         pred = logits_per_av.argmax(dim=1, keepdim=True)

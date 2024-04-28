@@ -276,7 +276,8 @@ class VCLAPNet(nn.Module):
             if not self.use_temporal_video:
                 # Now take the mean along the temporal direction
                 video_feat = image_features.mean(dim=1, keepdim=False)  # image features are now ready
-
+        assert(not self.use_temporal_video or video_feat.size(1) != 1)
+        
         # audio-visual fusion
         if self.use_audio:
             # audio feat
@@ -286,6 +287,7 @@ class VCLAPNet(nn.Module):
                 audio_feat = self.audio_encoder(audio, return_temporal=self.use_temporal_audio)
             else:
                 audio_feat = self.audio_encoder._get_audio_embeddings(audio, return_temporal=self.use_temporal_audio) #(b, 1024)
+            assert(not self.use_temporal_audio or audio_feat.size(1) != 1)
             
             # av_feat = self.fusion(video_feat, audio_feat)
             if isinstance(self.fusion, fusion.CrossModalAttn):
