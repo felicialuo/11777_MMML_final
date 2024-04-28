@@ -30,7 +30,4 @@ def euclidean_distance_loss(av_features: torch.Tensor, text_features: torch.Tens
     # loss2 = (euc_dist[~mask] * eta).sum()
 
     # return (loss1 + loss2) / euc_dist.numel()
-    loss_av = F.cross_entropy(euc_dist, gt)
-    gt_text = F.one_hot(gt, num_classes=num_classes).T.float()
-    loss_text = F.binary_cross_entropy_with_logits(euc_dist.t(), gt_text)
-    return (loss_av + loss_text) / 2
+    return symmetric_ce(euc_dist, euc_dist.t(), gt, num_classes)
