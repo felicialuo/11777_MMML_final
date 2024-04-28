@@ -1,5 +1,6 @@
 import torch
 import torch.nn.functional as F
+from utils import euclidean_distance
 
 def symmetric_ce(logits_av, logits_text, gt):
     loss_av = F.cross_entropy(logits_av, gt)
@@ -16,3 +17,16 @@ def composite_loss(logits_av, logits_text, av_features, text_features, gt):
     sym_ce = symmetric_ce(logits_av, logits_text, gt)
     # return mse + sym_ce
     return cossim_loss + sym_ce
+
+def euclidean_distance_loss(logits_av: torch.Tensor, logits_text: torch.Tensor, av_features: torch.Tensor, 
+                       text_features: torch.Tensor, gt: torch.Tensor, lam: float, eta: float):
+    euc_dist = euclidean_distance(av_features, text_features)
+
+    mask = torch.ones_like(euc_dist)
+    mask = mask.scatter(dim=1, index=gt[None], src=torch.zeros_like(euc_dist))
+    mask = mask.bool()
+
+    euc_dist[mask] *= -lam
+    euc_dist[~mask] *= eta
+
+    return euc_dist.mean()

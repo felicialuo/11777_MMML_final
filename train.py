@@ -189,6 +189,7 @@ def parse_args():
     parser.add_argument("--use_prompt_learner", action="store_true")
     parser.add_argument("--use_temporal_audio", action="store_true")
     parser.add_argument("--use_temporal_video", action="store_true")
+    parser.add_argument("--use_euclidean_distance", action="store_true")
 
 
     parser.add_argument("--loss", type=str, default='ce',
@@ -249,7 +250,8 @@ if __name__ == "__main__":
         model = TempNet(videomae_model, text_features, av_emb_size=768, device=device)
     elif args.network == "VCLAPNet": 
         model = VCLAPNet(videomae_model, audiomae_model, classname, clip_model, clap_model, device, use_videomae=args.use_videomae, use_audio=args.use_audio,
-                         use_audiomae=args.use_audiomae, use_temporal_audio=args.use_temporal_audio, num_crs_attn_layer=args.num_crs_attn_layer)
+                         use_audiomae=args.use_audiomae, use_temporal_audio=args.use_temporal_audio, num_crs_attn_layer=args.num_crs_attn_layer,
+                         use_euclidean_distance=args.use_euclidean_distance)
         model.freeze(visual=True, audio=True, text=True)
     elif args.network == "AlignNet": 
         model = AlignNet(videomae_model, classname, clip_model, device, use_videomae=args.use_videomae)
