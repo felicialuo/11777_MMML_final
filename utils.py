@@ -111,6 +111,17 @@ def get_text_features(device, encoder_choice='CLIP'):
 
     return text_features.float()
 
+def euclidean_distance(av_features: torch.Tensor, text_features: torch.Tensor) -> torch.Tensor:
+    B = av_features.size(0)
+    C = text_features.size(0)
+    av_features = av_features[:, None].repeat(1, C, 1)  # (B, C, D)
+    text_features = text_features[None].repeat(B, 1, 1) # (B, C, D)
+    
+    features_diff = (av_features - text_features)
+    euc_dist = features_diff.square().sum(dim=-1).sqrt()    # (B, C)
+
+    return euc_dist
+
 def freeze(model: torch.nn.Module) -> torch.nn.Module:
     for p in model.parameters():
         p.requires_grad = False

@@ -27,6 +27,7 @@ warnings.simplefilter("ignore", UserWarning)
 
 def train_one_epoch(model, train_loader, device, optimizer, criterion, epoch):
     model.train()
+    model.enable_lora()
     losses = []
     correct = 0
     total = 0
@@ -44,17 +45,19 @@ def train_one_epoch(model, train_loader, device, optimizer, criterion, epoch):
             loss = loss_utils.symmetric_ce(logits_per_av, logits_per_text, label)
         elif criterion == 'composite_loss':
             loss = loss_utils.composite_loss(logits_per_av, logits_per_text, av_features, text_features, label)
+        elif criterion == "euclidean_distance":
+            loss = loss_utils.euclidean_distance_loss(av_features, text_features, label)
 
-        loss.backward(retain_graph=(True if criterion == "composite_loss" else False))
+        loss.backward(retain_graph=(criterion == "composite_loss"))
         optimizer.step()
         
         pred = logits_per_av.argmax(dim=1, keepdim=True)
         correct += pred.eq(label.view_as(pred)).sum().item()
 
-        # release memory
-        del batch
-        torch.cuda.empty_cache()
-        gc.collect()
+        # # release memory
+        # del batch
+        # torch.cuda.empty_cache()
+        # gc.collect()
 
         losses.append(loss.item())
 
@@ -72,11 +75,16 @@ def train_one_epoch(model, train_loader, device, optimizer, criterion, epoch):
     return average_loss, correct / total
 
 
-def eval(model, test_loader, device, criterion, epoch):
+def eval(model, test_loader, device, criterion, epoch, seen=True):
     model.eval()
     losses = []
     correct = 0
     total = 0
+    
+    if seen:
+        model.enable_lora()
+    else:
+        model.disable_lora()
 
     batch_idx = 0
     with torch.no_grad():
@@ -140,7 +148,7 @@ def train(model, device, train_loader, test_seen_loader, test_unseen_loader, opt
         test_seen_losses.append(test_seen_loss) # average loss of every epoch
         test_seen_accuracies.append(test_seen_accuracy)
 
-        test_unseen_loss, test_unseen_accuracy = eval(model, test_unseen_loader, device, criterion, epoch)
+        test_unseen_loss, test_unseen_accuracy = eval(model, test_unseen_loader, device, criterion, epoch, seen=False)
         test_unseen_losses.append(test_unseen_loss) # average loss of every epoch
         test_unseen_accuracies.append(test_unseen_accuracy)
 
@@ -177,6 +185,7 @@ def parse_args():
     parser.add_argument("--num_epoch", type=int, default=5)
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--lr", type=float, default=2e-6)
+    parser.add_argument("--num_crs_attn_layer", type=int, default=1)
 
     parser.add_argument("--use_gpu", action="store_true")
     parser.add_argument("--use_iterable_DS", action="store_true")
@@ -187,10 +196,11 @@ def parse_args():
     parser.add_argument("--use_prompt_learner", action="store_true")
     parser.add_argument("--use_temporal_audio", action="store_true")
     parser.add_argument("--use_temporal_video", action="store_true")
+    parser.add_argument("--use_euclidean_distance", action="store_true")
 
 
     parser.add_argument("--loss", type=str, default='ce',
-                        choices=['ce', 'symmetric_ce', 'composite_loss'])
+                        choices=['ce', 'symmetric_ce', 'composite_loss', "euclidean_distance"])
 
     return parser.parse_args()
 
@@ -247,23 +257,30 @@ if __name__ == "__main__":
         model = TempNet(videomae_model, text_features, av_emb_size=768, device=device)
     elif args.network == "VCLAPNet": 
         model = VCLAPNet(videomae_model, audiomae_model, classname, clip_model, clap_model, device, use_videomae=args.use_videomae, use_audio=args.use_audio,
-                         use_audiomae=args.use_audiomae, use_temporal_audio=args.use_temporal_audio)
+                         use_audiomae=args.use_audiomae, use_temporal_audio=args.use_temporal_audio, num_crs_attn_layer=args.num_crs_attn_layer,
+                         use_euclidean_distance=args.use_euclidean_distance)
         model.freeze(visual=True, audio=True, text=True)
     elif args.network == "AlignNet": 
         model = AlignNet(videomae_model, classname, clip_model, device, use_videomae=args.use_videomae)
         model.freeze(visual=True, audio=True, text=True)
         
+    del image_processor
+    del videomae_model
+    torch.cuda.empty_cache()
+    gc.collect()
+    
     if args.use_lora:
         model.add_lora()
+        
 
-
-    # for name, param in model.image_encoder.named_parameters():
-    #         print(name, param.requires_grad)
+    print(model)
+    for name, param in model.image_encoder.named_parameters():
+            print(name, param.requires_grad)
         
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     criterion = args.loss
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.2)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.2)
 
     train_losses, train_accuracies, \
         test_seen_losses, test_seen_accuracies, \

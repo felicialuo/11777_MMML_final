@@ -161,7 +161,7 @@ class CrossModalAttn(BaseFusion):
         X2 = self.projection2(X2)
 
         def pass_attn_blocks(seq: torch.Tensor, cond: torch.Tensor, 
-                             blocks: list[CrossAttentionBlock]) -> torch.Tensor:
+                             blocks: list) -> torch.Tensor:
             X = seq
             for block in blocks:
                 X = block(X, cond)

@@ -24,6 +24,7 @@ from torch.nn.functional import normalize
 from basic_blocks import *
 
 from minlora import add_lora, apply_to_lora, disable_lora, enable_lora, get_lora_params, merge_lora, name_is_lora, remove_lora, load_multiple_lora, select_lora
+from utils import euclidean_distance
 
 UCF_SAMPLE_RATE = 44100
 CLAP_DURATION = 7
@@ -213,7 +214,8 @@ class TempNet(nn.Module):
 
 class VCLAPNet(nn.Module):
     def __init__(self, videomae_model, audiomae_model, classnames, clip_model, clap_model, device, use_videomae=False, 
-                 use_audio=True, use_audiomae=False, use_temporal_audio=False, use_temporal_video=False, use_prompt_learner=True):
+                 use_audio=True, use_audiomae=False, use_temporal_audio=False, use_temporal_video=False, use_prompt_learner=True,
+                 num_crs_attn_layer=1, use_euclidean_distance=False):
         super().__init__()
         
         
@@ -241,6 +243,7 @@ class VCLAPNet(nn.Module):
         self.use_audio = use_audio
         self.use_temporal_audio = use_temporal_audio
         self.use_temporal_video = use_temporal_video
+        self.use_euclidean_distance = use_euclidean_distance
 
         self.use_prompt_learner = use_prompt_learner
         if use_prompt_learner:
@@ -252,7 +255,9 @@ class VCLAPNet(nn.Module):
 
         
         # self.fusion = fusion.SummationFusion(dim1=768, dim2=1024, fuse_dim=768, projector=nn.AdaptiveAvgPool1d)
-        self.fusion = fusion.CrossModalAttn(dim1=768, dim2=1024, fuse_dim=clip_model.text_projection.shape[1], num_heads=4, dropout=0.1, mode=2, projector=nn.AdaptiveAvgPool1d)
+        self.fusion = fusion.CrossModalAttn(dim1=768, dim2=1024, fuse_dim=clip_model.text_projection.shape[1], \
+                                            num_heads=4, dropout=0.1, mode=2, projector=nn.AdaptiveAvgPool1d,\
+                                            num_layers=num_crs_attn_layer)
 
 
     def forward(self, batch):
@@ -312,9 +317,12 @@ class VCLAPNet(nn.Module):
             # skip prompt learner
             text_feat = self.text_feat_no_prompt
 
-        av_feat = av_feat / av_feat.norm(dim=-1, keepdim=True)
-        text_feat = text_feat / text_feat.norm(dim=-1, keepdim=True)
-        logits = logit_scale * av_feat @ text_feat.t().float()
+        if self.use_euclidean_distance:
+            logits = euclidean_distance(av_feat, text_feat)
+        else:
+            av_feat = av_feat / av_feat.norm(dim=-1, keepdim=True)
+            text_feat = text_feat / text_feat.norm(dim=-1, keepdim=True)
+            logits = logit_scale * av_feat @ text_feat.t().float()
     
 
         return logits, logits.t(), av_feat, text_feat
@@ -340,7 +348,15 @@ class VCLAPNet(nn.Module):
     def add_lora(self):
         add_lora(self.image_encoder.cpu())
         self.image_encoder.to(self.device)
-        
+    
+    
+    def disable_lora(self):
+        print("****Disabling LoRA****")
+        disable_lora(self.image_encoder)
+    
+    def enable_lora(self):
+        print("****Enabling LoRA****")
+        enable_lora(self.image_encoder)
 
 
 ####################################
@@ -575,5 +591,5 @@ class AlignNet(nn.Module):
     def add_lora(self):
         add_lora(self.image_encoder.cpu())
         self.image_encoder.to(self.device)
-            
+        
         
