@@ -45,6 +45,8 @@ def train_one_epoch(model, train_loader, device, optimizer, criterion, epoch):
             loss = loss_utils.symmetric_ce(logits_per_av, logits_per_text, label)
         elif criterion == 'composite_loss':
             loss = loss_utils.composite_loss(logits_per_av, logits_per_text, av_features, text_features, label)
+        elif criterion == "euclidean_distance":
+            loss = loss_utils.euclidean_distance_loss(logits_per_av, logits_per_text, av_features, text_features, label)
 
         loss.backward(retain_graph=True)
         optimizer.step()
@@ -198,7 +200,7 @@ def parse_args():
 
 
     parser.add_argument("--loss", type=str, default='ce',
-                        choices=['ce', 'symmetric_ce', 'composite_loss'])
+                        choices=['ce', 'symmetric_ce', 'composite_loss', "euclidean_distance"])
 
     return parser.parse_args()
 
