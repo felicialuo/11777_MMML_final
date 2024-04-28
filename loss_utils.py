@@ -19,14 +19,14 @@ def composite_loss(logits_av, logits_text, av_features, text_features, gt):
     return cossim_loss + sym_ce
 
 def euclidean_distance_loss(logits_av: torch.Tensor, logits_text: torch.Tensor, av_features: torch.Tensor, 
-                       text_features: torch.Tensor, gt: torch.Tensor, lam: float, eta: float):
+                       text_features: torch.Tensor, gt: torch.Tensor, lam: float = 1.0, eta: float = 10.0):
     euc_dist = euclidean_distance(av_features, text_features)
 
     mask = torch.ones_like(euc_dist)
     mask = mask.scatter(dim=1, index=gt[None], src=torch.zeros_like(euc_dist))
     mask = mask.bool()
 
-    euc_dist[mask] *= -lam
-    euc_dist[~mask] *= eta
+    loss1 = (euc_dist[mask] * -lam).sum()
+    loss2 = (euc_dist[~mask] * eta).sum()
 
-    return euc_dist.mean()
+    return (loss1 + loss2) / euc_dist.numel()
