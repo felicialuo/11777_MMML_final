@@ -54,8 +54,10 @@ def get_labels(csv_path="csv/UCF101_AV_labels.csv"):
 
 def get_sep_seen_unseen_labels(dataset_root_path = './datasets/UCF101/UCF-101/'):
 
+    splitter = '\\' if os.name == "nt" else '/'
+
     dataset_root_path = pathlib.Path(dataset_root_path)
-    unseen_labels = sorted({str(path).split("\\")[-2] for path in list(dataset_root_path.glob("test_unseen/*/*.avi"))})
+    unseen_labels = sorted({str(path).split(splitter)[-2] for path in list(dataset_root_path.glob("test_unseen/*/*.avi"))})
 
     label2id, id2label = get_labels()
     seen_label2id, seen_id2label = {label: id for label, id in label2id.items() if label not in unseen_labels},\

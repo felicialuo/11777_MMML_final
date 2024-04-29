@@ -17,7 +17,7 @@ from transformers import VideoMAEImageProcessor, VideoMAEModel
 import utils, data
 from models import m2cf
 
-def get_features_similarities_losses(model: VCLAPNet, loader: ZS_LabeledVideoDataset, seen: bool = True):
+def get_features_similarities_losses(model: VCLAPNet, loader: ZS_LabeledVideoDataset, classids: list[int], seen: bool = True):
     model.eval()
     
     if seen:
@@ -28,15 +28,15 @@ def get_features_similarities_losses(model: VCLAPNet, loader: ZS_LabeledVideoDat
     all_preds, all_truths = [], []
     all_av_features = []
     all_similarities = []
-    text_embeddings = model.get_text_features().cpu()
 
     print("Generating Audio-Visual and Textual Features from VCLAPNet")
 
     with torch.no_grad():
+        text_embeddings = model.get_text_features().cpu()[classids]
         for batch in tqdm(loader, total=loader.dataset.num_videos//loader.batch_size+1, position=0, leave=False, desc="Features Generation"):
             logits_per_av, logits_per_text, av_features, _ = model(batch)
-            preds = logits_per_av.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
-            truths = batch["labels"]
+            preds = logits_per_av.argmax(dim=1)  # get the index of the max log-probability
+            truths = batch["labels"].cpu()
 
             all_preds.append(preds.cpu())
             all_truths.append(truths)
@@ -70,7 +70,7 @@ def tsne_vis(input_features: torch.Tensor, text_features: torch.Tensor, labels: 
     plt.legend(handles=legend_elements, title="Classes", loc="lower left")
     plt.title(f"{title} -- Image Features")
     if save_path:
-        plt.savefig(save_path)
+        plt.savefig(os.path.join(save_path, "tsne-av-feats.png"))
     plt.show()
 
     x, y = tsne_text_features.T
@@ -79,7 +79,7 @@ def tsne_vis(input_features: torch.Tensor, text_features: torch.Tensor, labels: 
     plt.legend(handles=legend_elements, title="Classes", loc="lower left")
     plt.title(f"{title} -- Text Features")
     if save_path:
-        plt.savefig(save_path)
+        plt.savefig(os.path.join(save_path, "tsne-text-feats.png"))
     plt.show()
 
 def plot_confusion_matrix(y_true, y_pred, labels, fsize=(15, 15), save_path: str | None = None):
@@ -87,12 +87,12 @@ def plot_confusion_matrix(y_true, y_pred, labels, fsize=(15, 15), save_path: str
     ConfusionMatrixDisplay.from_predictions(y_true, y_pred, ax=ax, labels=np.arange(len(labels)), display_labels=labels,
                                              xticks_rotation="vertical", normalize="true")
     if save_path:
-        plt.savefig(save_path)
+        plt.savefig(os.path.join(save_path, "confusion_matrix.png"))
     plt.show()
     
     
-def get_conf_recall(labels: torch.Tensor, preds: torch.Tensor, similarity: torch.Tensor, classes: list[str]):
-    confs = {
+def get_sim_recall(labels: torch.Tensor, preds: torch.Tensor, similarity: torch.Tensor, classes: list[str], all_classes: list[str]):
+    sims = {
         c: 0. for c in classes
     }
 
@@ -107,30 +107,30 @@ def get_conf_recall(labels: torch.Tensor, preds: torch.Tensor, similarity: torch
     similarity = similarity.softmax(dim=-1)
 
     for i, (label, pred) in enumerate(zip(labels, preds)):
-        C = classes[label]
+        C = all_classes[label]
         ttl_nums[C] += 1
         correct_nums[C] += int(label.item() == pred.item())
 
-        confs[C] += similarity[i][label]
+        sims[C] += similarity[i][label]
     
     for k in classes:
         if ttl_nums[k] == 0:
             print(f"Warning: {k} has no data!")
             continue
 
-        confs[k] /= ttl_nums[k]
+        sims[k] /= ttl_nums[k]
         correct_nums[k] /= ttl_nums[k]
     
-    return confs, correct_nums
+    return sims, correct_nums
 
-def conf_recall_plot(confs: dict[str, float], recalls: dict[str, float], save_path: str | None = None):
-    heights = [confs[c] for c in confs.keys()]
-    y = [recalls[c] for c in confs.keys()]
+def sim_recall_plot(sims: dict[str, float], recalls: dict[str, float], save_path: str | None = None):
+    heights = [sims[c] for c in sims.keys()]
+    y = [recalls[c] for c in sims.keys()]
     x = np.arange(len(heights))
     fig, ax1 = plt.subplots(figsize=(25, 8))
-    ax1.bar(confs.keys(), height=heights, color="tab:red")
+    ax1.bar(sims.keys(), height=heights, color="tab:red")
     ax1.set_xlabel("Class")
-    ax1.set_ylabel("Average Confidence", color="tab:red")
+    ax1.set_ylabel("Average Similarity", color="tab:red")
     ax1.tick_params(axis='x', labelrotation=90)
     ax1.tick_params(axis='y', labelcolor="tab:red")
 
@@ -140,10 +140,10 @@ def conf_recall_plot(confs: dict[str, float], recalls: dict[str, float], save_pa
     ax2.set_ylabel("Recall", color="tab:blue")
     ax2.tick_params(axis='y', labelcolor="tab:blue")
 
-    plt.title("Confidence & Recall vs. Class")
+    plt.title("Similarity & Recall vs. Class")
     plt.legend()
     if save_path:
-        plt.savefig(save_path)
+        plt.savefig(os.path.join(save_path, "sim_recall.png"))
     plt.show()
 
 
@@ -192,25 +192,30 @@ if __name__ == "__main__":
     if args.dataset == "seen":
         dataloader = test_seen_loader
         classnames = list(tup[0].keys())
+        classids = list(tup[0].values())
         seen = True
     else:
         dataloader = test_unseen_loader
         classnames = list(tup[2].keys())
+        classids = list(tup[2].values())
         seen = False
     
     print(f"\nLoading the M2CF Version {args.m2cf_ver} model......")
     all_classnames = list(utils.get_labels()[0].keys())
     model = m2cf(classnames=all_classnames, audiomae_ckpt=args.audiomae_ckpt, model_ckpt=args.model_ckpt, version=args.m2cf_ver, device=device)
+    if args.dataset != "seen":
+        model.disable_lora()
 
     print("\nGenerating all the Audio-Visual and Textual embeddings and calculating similarities......")
-    truths, preds, av_features, similarities, text_features = get_features_similarities_losses(model, dataloader, seen=seen)
+    truths, preds, av_features, similarities, text_features = get_features_similarities_losses(model, dataloader, classids=classids, seen=seen)
+    print(f"Accuracy: {torch.sum(truths == preds) / truths.shape[0] * 100:2f}%")
 
     # make sure the save path is correct
     save_path = None
     if args.auto_save:
-        if not os.path.exists(args.plot_path):
-            os.makedirs(args.plot_path)
-        save_path = args.plot_path
+        save_path = os.path.join(args.plot_path, args.dataset)
+        if not os.path.exists(save_path):
+            os.makedirs(save_path)
 
     if args.all or args.tsne:
         print("\nPlotting t-SNE distributions for the generated features......")
@@ -236,5 +241,5 @@ if __name__ == "__main__":
     
     if args.all or args.recall_similarity:
         print("\nPlotting graph for per-class recall and similarities distributions......")
-        confs, recalls = get_conf_recall(truths, preds, similarities, classnames)
-        conf_recall_plot(confs, recalls, save_path=save_path)
+        sims, recalls = get_sim_recall(truths, preds, similarities, classnames, all_classnames)
+        sim_recall_plot(sims, recalls, save_path=save_path)
