@@ -19,6 +19,7 @@ from clip.simple_tokenizer import SimpleTokenizer as _Tokenizer
 import fusion
 from basic_blocks import PositionalEncoding, SelfAttentionEncoder, CrossAttentionEncoder
 
+from transformers import VideoMAEModel, VideoMAEImageProcessor
 
 from torch.nn.functional import normalize
 from basic_blocks import *
@@ -253,11 +254,11 @@ class VCLAPNet(nn.Module):
             tokenized_text = torch.cat([clip.tokenize(f"a video of a {c}")for c in classnames]).to(device)
             self.text_feat_no_prompt = self.text_encoder.encode_text(tokenized_text)
 
-        
-        # self.fusion = fusion.SummationFusion(dim1=768, dim2=1024, fuse_dim=768, projector=nn.AdaptiveAvgPool1d)
-        self.fusion = fusion.CrossModalAttn(dim1=768, dim2=1024, fuse_dim=clip_model.text_projection.shape[1], \
-                                            num_heads=4, dropout=0.1, mode=2, projector=nn.AdaptiveAvgPool1d,\
-                                            num_layers=num_crs_attn_layer)
+        if use_audio:
+            # self.fusion = fusion.SummationFusion(dim1=768, dim2=1024, fuse_dim=768, projector=nn.AdaptiveAvgPool1d)
+            self.fusion = fusion.CrossModalAttn(dim1=768, dim2=1024, fuse_dim=clip_model.text_projection.shape[1], \
+                                                num_heads=4, dropout=0.1, mode=2, projector=nn.AdaptiveAvgPool1d,\
+                                                num_layers=num_crs_attn_layer)
 
 
     def forward(self, batch):
@@ -344,6 +345,17 @@ class VCLAPNet(nn.Module):
             print("Text encoder freezed")
             self.text_freeze = True
 
+    def get_text_features(self) -> torch.Tensor:
+        if self.use_prompt_learner:
+            tokenized_prompts = self.tokenized_prompts
+            prompts = self.prompt_learner()
+            text_feat = self.text_encoder(prompts, tokenized_prompts)
+        else:
+            # skip prompt learner
+            text_feat = self.text_feat_no_prompt
+        
+        text_feat /= torch.norm(text_feat, 2, dim=-1, keepdim=True)
+        return text_feat
 
     def add_lora(self):
         add_lora(self.image_encoder.cpu())
@@ -454,7 +466,7 @@ class VLPromptLearner(nn.Module):
             print(f'Initial text context: "{prompt_prefix}"')
             print(f"Number of context words (tokens) for Language prompting: {n_ctx}")
             print(f"Number of context words (tokens) for Vision prompting: {self.N_CTX_VISION}")
-            self.ctx = nn.Parameter(ctx_vectors)
+            self.ctx = nn.Parameter(ctx_vectors).to(device)
 
             classnames = [name.replace("_", " ") for name in classnames]
             prompts = [prompt_prefix + " " + name + "." for name in classnames]
@@ -593,3 +605,44 @@ class AlignNet(nn.Module):
         self.image_encoder.to(self.device)
         
         
+def m2cf(classnames: list[str], audiomae_ckpt: str | None = None, model_ckpt: str | None = None, version: int = 2, device: torch.device = torch.device("cuda")) -> VCLAPNet:
+    # clip model
+    clip_model, _ = clip.load("ViT-L/14", device)
+    clip_model.float()
+
+    if version not in [2, 3]:
+        raise NotImplementedError("Only going to use M2CF v2 or v3 for analysis.")
+    if version == 2:
+        kwargs = {
+            "videomae_model": None,
+            "audiomae_model": None,
+            "clip_model": clip_model,
+            "clap_model": None,
+            "use_videomae": False,
+            "use_audiomae": False,
+            "use_audio": False,
+            "use_prompt_learner": True
+        }
+    else:
+        audiomae_model = AudioMAEWrapper("mae_vit_base_patch16", audiomae_ckpt, False).to(device)
+        kwargs = {
+            "videomae_model": None,
+            "audiomae_model": audiomae_model,
+            "clip_model": clip_model,
+            "clap_model": None,
+            "use_videomae": False,
+            "use_audiomae": True,
+            "use_audio": True,
+            "use_prompt_learner": True,
+            "use_temporal_audio": True,
+            "num_crs_attn_layer": 1
+        }
+
+    model = VCLAPNet(**kwargs, classnames=classnames, device=device)
+    model.add_lora()
+
+    if model_ckpt:
+        state_dict = torch.load(model_ckpt)["model_state_dict"]
+        model.load_state_dict(state_dict, strict=False)
+
+    return model

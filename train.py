@@ -171,9 +171,6 @@ def parse_args():
     parser.add_argument("--data_path", type=str, default="./datasets/UCF101/UCF-101/")
     parser.add_argument("--videomae_ckpt", type=str, default="MCG-NJU/videomae-base")
 
-    parser.add_argument("--audiores_ckpt", type=str, default="./Models/AudioResNet/finetuned-L18.pth")
-    parser.add_argument("--audiores_layers", type=int, default=18,
-                        choices=[18, 34, 50, 101, 134])
     parser.add_argument("--audiomae_arch", type=str, default="mae_vit_base_patch16")
     parser.add_argument("--audiomae_ckpt", type=str, default="D:/Models/AudioMAE/pretrained.pth")
 

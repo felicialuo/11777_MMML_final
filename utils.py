@@ -216,5 +216,9 @@ def prepare_model(chkpt_dir, arch='mae_vit_base_patch16'):
     # print(msg)
     return model
 
+def arg_print(args, file=None):
+    for k, v in vars(args).items():
+        print(f"{str(k).ljust(25)}:{str(v).rjust(50)}", file=file, flush=True)
+
 if __name__ == "__main__":
     seen_label2id, seen_id2label, unseen_label2id, unseen_id2label = get_sep_seen_unseen_labels()
