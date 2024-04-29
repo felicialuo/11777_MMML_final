@@ -10,7 +10,7 @@ import torch
 from transformers import VideoMAEModel, VideoMAEImageProcessor, Trainer, TrainingArguments
 import clip
 from msclap import CLAP
-from models import AlignNet, TempNet, VCLAPNet, AudioMAEWrapper
+from models import TempNet, VCLAPNet, AudioMAEWrapper
 
 import utils, data, loss_utils
 
@@ -182,7 +182,7 @@ def parse_args():
                         choices=["ViT-L/14", "ViT-B/16", "ViT-B/32"])
     
     parser.add_argument("--network", type=str, default="TempNet",
-                        choices=["TempNet", "VCLAPNet", "AlignNet"])
+                        choices=["TempNet", "VCLAPNet"])
     parser.add_argument("--num_epoch", type=int, default=5)
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--lr", type=float, default=2e-6)
@@ -267,9 +267,9 @@ if __name__ == "__main__":
                          use_audiomae=args.use_audiomae, use_all_audio=args.use_all_audio, use_temporal_video=args.use_temporal_video, 
                          num_crs_attn_layer=args.num_crs_attn_layer, use_euclidean_distance=args.use_euclidean_distance)
         model.freeze(visual=True, audio=True, text=True)
-    elif args.network == "AlignNet": 
-        model = AlignNet(videomae_model, classname, clip_model, device, use_videomae=args.use_videomae)
-        model.freeze(visual=True, audio=True, text=True)
+    # elif args.network == "AlignNet": 
+    #     model = AlignNet(videomae_model, classname, clip_model, device, use_videomae=args.use_videomae)
+    #     model.freeze(visual=True, audio=True, text=True)
         
     del image_processor
     del videomae_model
