@@ -194,6 +194,7 @@ def sim_recall_plot(sims: dict[str, float], recalls: dict[str, float], save_path
 
     plt.title("Similarity & Recall vs. Class")
     plt.legend()
+    plt.tight_layout()
     if save_path:
         plt.savefig(os.path.join(save_path, "sim_recall.png"))
     plt.show()
