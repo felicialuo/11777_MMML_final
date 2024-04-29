@@ -36,6 +36,7 @@ notebooks/audio_mae_ucf101.ipynb
 stats/
 wandb/
 plots/
+tensors/
 
 new_videomae/
 AudioMAE/
