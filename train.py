@@ -14,6 +14,8 @@ from models import AlignNet, TempNet, VCLAPNet, AudioMAEWrapper
 
 import utils, data, loss_utils
 
+import pandas as pd
+
 import argparse
 
 import warnings
@@ -100,6 +102,8 @@ def eval(model, test_loader, device, criterion, epoch, seen=True):
                 loss = loss_utils.symmetric_ce(logits_per_av, logits_per_text, label)
             elif criterion == 'composite_loss':
                 loss = loss_utils.composite_loss(logits_per_av, logits_per_text, av_features, text_features, label)
+            elif criterion == "euclidean_distance":
+                loss = loss_utils.euclidean_distance_loss(av_features, text_features, label)
 
             pred = logits_per_av.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
             correct += pred.eq(label.view_as(pred)).sum().item()
@@ -201,12 +205,18 @@ def parse_args():
 
     parser.add_argument("--loss", type=str, default='ce',
                         choices=['ce', 'symmetric_ce', 'composite_loss', "euclidean_distance"])
+    
+    parser.add_argument("--stats_dir", type=str, default="./stats/")
 
     return parser.parse_args()
 
+def arg_print(args, file=None):
+    for k, v in vars(args).items():
+        print(f"{str(k).ljust(25)}:{str(v).rjust(50)}", file=file, flush=True)
+
 if __name__ == "__main__":
     args = parse_args()
-    print(args)
+    arg_print(args)
 
     import time
     start_time = time.time()
@@ -287,6 +297,25 @@ if __name__ == "__main__":
             test_unseen_losses, test_unseen_accuracies = train(model, device, train_loader, test_seen_loader, test_unseen_loader, 
                                                                 optimizer, criterion, scheduler, num_epoch=args.num_epoch, 
                                                                 ckpt_name=args.save_ckpt_to)
+    
+    # record statistics and corresponding arguments.
+    if not os.path.exists(args.stats_dir):
+        os.makedirs(args.stats_dir)
+        print(f"Statistics directory not exist, created...")
+    
+    df = pd.DataFrame({
+        "Train Loss": train_losses,
+        "Train Accuracy": train_accuracies,
+        "Test Seen Loss": test_seen_losses,
+        "Test Seen Accuracy": test_seen_accuracies,
+        "Test Unseen Loss": test_unseen_losses,
+        "Test Unseen Accuracy": test_unseen_accuracies
+    })
+    df.to_csv(os.path.join(args.stats_dir, f"stats_{start_time}.csv"))
+
+    f = open(os.path.join(args.stats_dir,f"args_{start_time}.txt", 'w'))
+    arg_print(args, file=f)
+    f.close()
 
     end_time = time.time()
     elapsed_time = end_time - start_time
