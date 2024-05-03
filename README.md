@@ -6,6 +6,17 @@
 Course project of Carnegie Mellon University 11-777 MultiModal Machine learning. Task is Human Activity Recognition and used dataset UCF-101.
 
 ## Setup
+Run the `scripts/setup.sh` to setup a conda environment on a Linux machine.
+```
+# make sure in the correct directory
+cd scripts/
+# add execution permission to setup
+chmod +x setup.sh
+# run the setup script
+./setup.sh
+# activate the created environment to start play
+conda activate m2cf
+```
 
 ## Training
 
