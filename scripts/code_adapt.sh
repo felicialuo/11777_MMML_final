@@ -1,4 +1,10 @@
-export packs_path=~/miniconda3/envs/m2cf/lib/python3.11/site-packages
+if [ -d ~/miniconda3 ]; then
+    # use miniconda
+    export packs_path=~/miniconda3/envs/m2cf/lib/python3.11/site-packages
+else
+    # Use anaconda
+    export packs_path=~/anaconda3/envs/m2cf/lib/python3.11/site-packages
+fi
 
 # msCLAP model codes
 export msclap_path=$packs_path/msclap

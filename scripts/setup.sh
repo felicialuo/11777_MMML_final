@@ -23,13 +23,5 @@ git clone https://github.com/facebookresearch/AudioMAE.git
 
 # adapt the codes for environment compatibility and our needs
 cd scripts/
-if [ -d ~/miniconda3 ]; then
-    # use miniconda
-    chmod +x code_adapt_miniconda.sh
-    ./code_adapt_miniconda.sh
-else
-    # Use anaconda
-    chmod +x code_adapt_anaconda.sh
-    ./code_adapt_anaconda.sh
-fi
-cd ..
+chmod +x code_adapt.sh
+./code_adapt.sh
