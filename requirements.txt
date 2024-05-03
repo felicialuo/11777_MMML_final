@@ -3,7 +3,7 @@ ftfy
 regex
 einops
 matplotlib
-transformers==4.40.0
+transformers[torch]==4.40.0
 clip @ git+https://github.com/openai/CLIP.git
 msclap==1.3.3
 pytorchvideo==0.1.5
