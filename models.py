@@ -49,10 +49,10 @@ class AudioMAEWrapper(nn.Module):
         if not finetune:
             utils.freeze(self.model)
 
-    def forward(self, x: torch.Tensor, return_temporal: bool = False) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, return_all: bool = False) -> torch.Tensor:
         x = self.model.forward_encoder_no_mask(x)
 
-        if not return_temporal:
+        if not return_all:
             x = x.mean(dim=1)
 
         return x
@@ -290,9 +290,9 @@ class VCLAPNet(nn.Module):
             audio = utils.load_batch_audio_into_tensor(batch["audio"], UCF_SAMPLE_RATE, AUDIOMAE_DURATION if self.use_audiomae else CLAP_DURATION, 
                                                        self.use_audiomae).to(self.device) # sample rate and duration are both hardcoded
             if self.use_audiomae:
-                audio_feat = self.audio_encoder(audio, return_temporal=self.use_all_audio)
+                audio_feat = self.audio_encoder(audio, return_all=self.use_all_audio)
             else:
-                audio_feat = self.audio_encoder._get_audio_embeddings(audio, return_temporal=self.use_all_audio) #(b, 1024)
+                audio_feat = self.audio_encoder._get_audio_embeddings(audio, return_all=self.use_all_audio) #(b, 1024)
             assert(not self.use_all_audio or audio_feat.size(1) != 1)
             
             # av_feat = self.fusion(video_feat, audio_feat)
