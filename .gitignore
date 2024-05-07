@@ -38,6 +38,8 @@ wandb/
 plots/
 tensors/
 
+# others
 new_videomae/
 AudioMAE/
 minLoRA/
+scripts/playground.sh
