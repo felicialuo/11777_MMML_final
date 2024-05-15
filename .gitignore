@@ -32,10 +32,14 @@ __pycache__/
 playground.ipynb
 notebooks/audio_mae_ucf101.ipynb
 
-# ignore statistics
+# ignore statistics and records
 stats/
-
 wandb/
+plots/
+tensors/
+
+# others
 new_videomae/
 AudioMAE/
 minLoRA/
+scripts/playground.sh

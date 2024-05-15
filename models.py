@@ -49,10 +49,10 @@ class AudioMAEWrapper(nn.Module):
         if not finetune:
             utils.freeze(self.model)
 
-    def forward(self, x: torch.Tensor, return_temporal: bool = False) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, return_all: bool = False) -> torch.Tensor:
         x = self.model.forward_encoder_no_mask(x)
 
-        if not return_temporal:
+        if not return_all:
             x = x.mean(dim=1)
 
         return x
@@ -215,7 +215,7 @@ class TempNet(nn.Module):
 
 class VCLAPNet(nn.Module):
     def __init__(self, videomae_model, audiomae_model, classnames, clip_model, clap_model, device, use_videomae=False, 
-                 use_audio=True, use_audiomae=False, use_temporal_audio=False, use_temporal_video=False, use_prompt_learner=True,
+                 use_audio=True, use_audiomae=False, use_all_audio=False, use_temporal_video=False, use_prompt_learner=True,
                  num_crs_attn_layer=1, use_euclidean_distance=False):
         super().__init__()
         
@@ -242,13 +242,13 @@ class VCLAPNet(nn.Module):
         self.dtype = clip_model.dtype
         self.device = device
         self.use_audio = use_audio
-        self.use_temporal_audio = use_temporal_audio
+        self.use_all_audio = use_all_audio
         self.use_temporal_video = use_temporal_video
         self.use_euclidean_distance = use_euclidean_distance
 
         self.use_prompt_learner = use_prompt_learner
         if use_prompt_learner:
-            self.prompt_learner = VLPromptLearner(classnames, clip_model, device)
+            self.prompt_learner = VLPromptLearner(classnames, clip_model, device).to(device)
             self.tokenized_prompts = self.prompt_learner.tokenized_prompts
         else:
             tokenized_text = torch.cat([clip.tokenize(f"a video of a {c}")for c in classnames]).to(device)
@@ -258,7 +258,7 @@ class VCLAPNet(nn.Module):
             # self.fusion = fusion.SummationFusion(dim1=768, dim2=1024, fuse_dim=768, projector=nn.AdaptiveAvgPool1d)
             self.fusion = fusion.CrossModalAttn(dim1=768, dim2=1024, fuse_dim=clip_model.text_projection.shape[1], \
                                                 num_heads=4, dropout=0.1, mode=2, projector=nn.AdaptiveAvgPool1d,\
-                                                num_layers=num_crs_attn_layer)
+                                                num_layers=num_crs_attn_layer).to(device)
 
 
     def forward(self, batch):
@@ -290,10 +290,10 @@ class VCLAPNet(nn.Module):
             audio = utils.load_batch_audio_into_tensor(batch["audio"], UCF_SAMPLE_RATE, AUDIOMAE_DURATION if self.use_audiomae else CLAP_DURATION, 
                                                        self.use_audiomae).to(self.device) # sample rate and duration are both hardcoded
             if self.use_audiomae:
-                audio_feat = self.audio_encoder(audio, return_temporal=self.use_temporal_audio)
+                audio_feat = self.audio_encoder(audio, return_all=self.use_all_audio)
             else:
-                audio_feat = self.audio_encoder._get_audio_embeddings(audio, return_temporal=self.use_temporal_audio) #(b, 1024)
-            assert(not self.use_temporal_audio or audio_feat.size(1) != 1)
+                audio_feat = self.audio_encoder._get_audio_embeddings(audio, return_all=self.use_all_audio) #(b, 1024)
+            assert(not self.use_all_audio or audio_feat.size(1) != 1)
             
             # av_feat = self.fusion(video_feat, audio_feat)
             if isinstance(self.fusion, fusion.CrossModalAttn):
@@ -466,7 +466,7 @@ class VLPromptLearner(nn.Module):
             print(f'Initial text context: "{prompt_prefix}"')
             print(f"Number of context words (tokens) for Language prompting: {n_ctx}")
             print(f"Number of context words (tokens) for Vision prompting: {self.N_CTX_VISION}")
-            self.ctx = nn.Parameter(ctx_vectors).to(device)
+            self.ctx = nn.Parameter(ctx_vectors)
 
             classnames = [name.replace("_", " ") for name in classnames]
             prompts = [prompt_prefix + " " + name + "." for name in classnames]
@@ -527,83 +527,6 @@ class VLPromptLearner(nn.Module):
             prompts = self.complete_text_embeddings
 
         return prompts
-
-class AlignNet(nn.Module):
-    def __init__(self, videomae_model, classnames, clip_model, device, use_videomae=False):
-        super().__init__()
-        self.prompt_learner = VLPromptLearner(classnames, clip_model, device)
-        self.tokenized_prompts = self.prompt_learner.tokenized_prompts
-        
-        if use_videomae:
-            print("Using VideoMae model for image encoder")
-            self.image_encoder = videomae_model
-        else:
-            print("Using CLIP model for image encoder")
-            self.image_encoder = clip_model.visual
-        self.use_videomae = use_videomae
-        
-        self.text_encoder = TextEncoder(clip_model)
-        self.logit_scale = clip_model.logit_scale
-        self.dtype = clip_model.dtype
-        self.device = device
-        self.visual_freeze, self.text_freeze = False, False
-        
-        self.fc = nn.Sequential(
-            nn.Linear(768, 512), #might be a problem
-        )
-                
-    
-    def forward(self, batch):
-        tokenized_prompts = self.tokenized_prompts
-        logit_scale = self.logit_scale.exp()
-        prompts = self.prompt_learner()
-                
-        if self.use_videomae:
-            # # Now pass the image into CLIP visual encoder
-            video_feat = utils.get_videomae_feats(self.image_encoder, batch, self.device, freeze=self.visual_freeze) #torch.Size([8, 1568, 768])
-            video_feat = nn.functional.avg_pool1d(video_feat.permute(0, 2, 1), kernel_size=video_feat.shape[1]).squeeze(-1) # exp (b, av_emb_size) torch.Size([8, 768])
-            #video_feat = self.fc(video_feat) #torch.Size([8, 512])
-        else:
-            image = batch['pixel_values']
-            b, t, c, h, w = image.size()
-            # Remove the batch dimensions
-            image = image.reshape(-1, c, h, w)
-            # Now pass the image into CLIP visual encoder
-            image_features = self.image_encoder(image.type(self.dtype))
-            # Now again attach the batch dimensions
-            image_features = image_features.view(b, t, -1)  # [B, T, 512]
-            # Now take the mean along the temporal direction
-            video_feat = image_features.mean(dim=1, keepdim=False)  # image features are now ready
-
-
-        # Finally, make the text features
-        text_feat = self.text_encoder(prompts, tokenized_prompts)
-
-        video_feat = video_feat / video_feat.norm(dim=-1, keepdim=True)
-        text_feat = text_feat / text_feat.norm(dim=-1, keepdim=True)
-        logits = logit_scale * video_feat @ text_feat.t().float()
-    
-
-
-        return logits, logits.t(), video_feat, text_feat
-    
-    
-    def freeze(self, visual = True, text = True):
-        
-        if visual:
-            utils.freeze(self.image_encoder)
-            print("Visual encoder freezed")
-            self.visual_freeze = True
-        if text:
-            utils.freeze(self.text_encoder)
-            print("Text encoder freezed")
-            self.text_freeze = True
-            
-    
-    def add_lora(self):
-        add_lora(self.image_encoder.cpu())
-        self.image_encoder.to(self.device)
-        
         
 def m2cf(classnames: list[str], audiomae_ckpt: str | None = None, model_ckpt: str | None = None, version: int = 2, device: torch.device = torch.device("cuda")) -> VCLAPNet:
     # clip model
@@ -624,7 +547,7 @@ def m2cf(classnames: list[str], audiomae_ckpt: str | None = None, model_ckpt: st
             "use_prompt_learner": True
         }
     else:
-        audiomae_model = AudioMAEWrapper("mae_vit_base_patch16", audiomae_ckpt, False).to(device)
+        audiomae_model = AudioMAEWrapper(audiomae_ckpt, "mae_vit_base_patch16", False).to(device)
         kwargs = {
             "videomae_model": None,
             "audiomae_model": audiomae_model,
@@ -634,7 +557,7 @@ def m2cf(classnames: list[str], audiomae_ckpt: str | None = None, model_ckpt: st
             "use_audiomae": True,
             "use_audio": True,
             "use_prompt_learner": True,
-            "use_temporal_audio": True,
+            "use_all_audio": True,
             "num_crs_attn_layer": 1
         }
 
