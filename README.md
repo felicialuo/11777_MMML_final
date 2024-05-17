@@ -5,6 +5,9 @@
 
 Course project of Carnegie Mellon University 11-777 MultiModal Machine Learning. Our task is zero-shot audio-visual human activity recognition using the UCF-101 dataset.
 
+**Ruohua Li**\*, **Felicia Luo**\*, **Rui Wang**\*  
+\*Equal Contribution -- Alphabetical order
+
 ## Setup
 Run the `scripts/setup.sh` to setup a conda environment on a Linux machine.
 ```
